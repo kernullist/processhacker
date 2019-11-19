@@ -479,8 +479,9 @@ VOID DotNetAsmShowContextMenu(
     PhInsertEMenuItem(menu, PhCreateEMenuSeparator(), ULONG_MAX);
     PhInsertEMenuItem(menu, PhCreateEMenuItem(0, ID_CLR_COPY, L"&Copy", NULL, NULL), ULONG_MAX);
     PhInsertCopyCellEMenuItem(menu, ID_CLR_COPY, Context->TreeNewHandle, ContextMenuEvent->Column);
+    PhSetFlagsEMenuItem(menu, ID_CLR_INSPECT, PH_EMENU_DEFAULT, PH_EMENU_DEFAULT);
 
-    if (PhIsNullOrEmptyString(node->PathText) || !RtlDoesFileExists_U(node->PathText->Buffer))
+    if (PhIsNullOrEmptyString(node->PathText) || !PhDoesFileExistsWin32(PhGetString(node->PathText)))
     {
         PhSetFlagsEMenuItem(menu, ID_CLR_INSPECT, PH_EMENU_DISABLED, PH_EMENU_DISABLED);
         PhSetFlagsEMenuItem(menu, ID_CLR_OPENFILELOCATION, PH_EMENU_DISABLED, PH_EMENU_DISABLED);
@@ -495,7 +496,7 @@ VOID DotNetAsmShowContextMenu(
         ContextMenuEvent->Location.y
         );
 
-    if (selectedItem && selectedItem->Id != -1)
+    if (selectedItem && selectedItem->Id != ULONG_MAX)
     {
         BOOLEAN handled = FALSE;
 
@@ -507,7 +508,7 @@ VOID DotNetAsmShowContextMenu(
             {
             case ID_CLR_INSPECT:
                 {
-                    if (!PhIsNullOrEmptyString(node->PathText) && RtlDoesFileExists_U(node->PathText->Buffer))
+                    if (!PhIsNullOrEmptyString(node->PathText) && PhDoesFileExistsWin32(PhGetString(node->PathText)))
                     {
                         PhShellExecuteUserString(
                             Context->WindowHandle,
@@ -521,7 +522,7 @@ VOID DotNetAsmShowContextMenu(
                 break;
             case ID_CLR_OPENFILELOCATION:
                 {
-                    if (!PhIsNullOrEmptyString(node->PathText) && RtlDoesFileExists_U(node->PathText->Buffer))
+                    if (!PhIsNullOrEmptyString(node->PathText) && PhDoesFileExistsWin32(PhGetString(node->PathText)))
                     {
                         PhShellExploreFile(Context->WindowHandle, node->PathText->Buffer);
                     }
@@ -676,6 +677,25 @@ BOOLEAN NTAPI DotNetAsmTreeNewCallback(
                 if (GetKeyState(VK_CONTROL) < 0)
                     SendMessage(context->WindowHandle, WM_COMMAND, ID_COPY, 0);
                 break;
+            }
+        }
+        return TRUE;
+    case TreeNewLeftDoubleClick:
+        {
+            PDNA_NODE node;
+
+            if (!(node = DotNetAsmGetSelectedTreeNode(Context)))
+                break;
+
+            if (!PhIsNullOrEmptyString(node->u.Assembly.FullyQualifiedAssemblyName) && PhDoesFileExistsWin32(PhGetString(node->PathText)))
+            {
+                PhShellExecuteUserString(
+                    context->WindowHandle,
+                    L"ProgramInspectExecutables",
+                    node->PathText->Buffer,
+                    FALSE,
+                    L"Make sure the PE Viewer executable file is present."
+                    );
             }
         }
         return TRUE;
@@ -859,7 +879,7 @@ static VOID NTAPI DotNetEventCallback(
                 node->Type = DNA_TYPE_CLR;
                 node->u.Clr.ClrInstanceID = data->ClrInstanceID;
                 node->u.Clr.StartupFlags = data->StartupFlags;
-                node->u.Clr.DisplayName = PhFormatString(L"CLR v%u.%u.%u.%u", data->VMMajorVersion, data->VMMinorVersion, data->VMBuildNumber, data->VMQfeNumber);
+                node->u.Clr.DisplayName = PhFormatString(L"CLR v%hu.%hu.%hu.%hu", data->VMMajorVersion, data->VMMinorVersion, data->VMBuildNumber, data->VMQfeNumber);
                 node->StructureText = node->u.Clr.DisplayName->sr;
                 node->IdText = PhFormatUInt64(data->ClrInstanceID, FALSE);
 
@@ -1169,7 +1189,8 @@ ULONG UpdateDotNetTraceInfoWithTimeout(
     Context->TraceHandleActive = 0;
     Context->TraceHandle = 0;
 
-    threadHandle = PhCreateThread(0, UpdateDotNetTraceInfoThreadStart, Context);
+    if (!NT_SUCCESS(PhCreateThreadEx(&threadHandle, UpdateDotNetTraceInfoThreadStart, Context)))
+        return ERROR_INVALID_HANDLE;
 
     if (NtWaitForSingleObject(threadHandle, FALSE, Timeout) != STATUS_WAIT_0)
     {
@@ -1508,8 +1529,8 @@ INT_PTR CALLBACK DotNetAsmPageDlgProc(
             DotNetAsmSaveSettingsTreeList(context);
             DotNetAsmDestroyTreeNodes(context);
 
-            PhDereferenceObject(context->TreeErrorMessage);
-            PhDereferenceObject(context->SearchBoxText);
+            if (context->SearchBoxText) PhDereferenceObject(context->SearchBoxText);
+            if (context->TreeErrorMessage) PhDereferenceObject(context->TreeErrorMessage);
             PhFree(context);
         }
         break;
@@ -1628,6 +1649,18 @@ INT_PTR CALLBACK DotNetAsmPageDlgProc(
             }
         }
         break;
+    case WM_KEYDOWN:
+        {
+            if (LOWORD(wParam) == 'K')
+            {
+                if (GetKeyState(VK_CONTROL) < 0)
+                {
+                    SetFocus(context->SearchBoxHandle);
+                    return TRUE;
+                }
+            }
+        }
+        break;
     case DN_ASM_UPDATE_MSG:
         {
             ULONG result = (ULONG)wParam;
@@ -1663,12 +1696,16 @@ INT_PTR CALLBACK DotNetAsmPageDlgProc(
             }
             else
             {
+                PPH_STRING errorMessage = PhGetWin32Message(result);
 
-                PhMoveReference(&context->TreeErrorMessage,
-                    PhConcatStrings2(L"Unable to start the event tracing session: ", PhGetStringOrDefault(PhGetWin32Message(result), L"Unknown error"))
-                    );
+                PhMoveReference(&context->TreeErrorMessage, PhConcatStrings2(
+                    L"Unable to start the event tracing session: ",
+                    PhGetStringOrDefault(errorMessage, L"Unknown error")
+                    ));
                 TreeNew_SetEmptyText(context->TreeNewHandle, &context->TreeErrorMessage->sr, 0);
                 TreeNew_NodesStructured(context->TreeNewHandle);
+
+                PhClearReference(&errorMessage);
             }
 
             DestroyDotNetTraceQuery(queryContext);

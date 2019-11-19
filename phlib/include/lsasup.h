@@ -56,6 +56,15 @@ PhLookupSid(
     );
 
 PHLIBAPI
+VOID
+NTAPI
+PhLookupSids(
+    _In_ ULONG Count,
+    _In_ PSID *Sids,
+    _Out_ PPH_STRING **FullNames
+    );
+
+PHLIBAPI
 NTSTATUS
 NTAPI
 PhLookupName(
@@ -87,6 +96,14 @@ NTAPI
 PhGetTokenUserString(
     _In_ HANDLE TokenHandle,
     _In_ BOOLEAN IncludeDomain
+    );
+
+PHLIBAPI
+NTSTATUS
+NTAPI
+PhGetAccountPrivileges(
+    _In_ PSID AccountSid,
+    _Out_ PTOKEN_PRIVILEGES* Privileges
     );
 
 PHLIBAPI

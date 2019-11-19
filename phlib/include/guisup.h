@@ -11,10 +11,6 @@ extern "C" {
 
 // guisup
 
-typedef BOOL (WINAPI *_IsImmersiveProcess)(
-    _In_ HANDLE hProcess
-    );
-
 #define RFF_NOBROWSE 0x0001
 #define RFF_NODEFAULT 0x0002
 #define RFF_CALCDIRECTORY 0x0004
@@ -28,9 +24,9 @@ typedef BOOL (WINAPI *_IsImmersiveProcess)(
 typedef struct _NMRUNFILEDLGW
 {
     NMHDR hdr;
-    LPCWSTR lpszFile;
-    LPCWSTR lpszDirectory;
-    UINT nShow;
+    PWSTR lpszFile;
+    PWSTR lpszDirectory;
+    UINT ShowCmd;
 } NMRUNFILEDLGW, *LPNMRUNFILEDLGW, *PNMRUNFILEDLGW;
 
 typedef NMRUNFILEDLGW NMRUNFILEDLG;
@@ -42,24 +38,6 @@ typedef LPNMRUNFILEDLGW LPNMRUNFILEDLG;
 #define RF_RETRY 0x0002
 
 typedef HANDLE HTHEME;
-
-typedef BOOL (WINAPI *_RunFileDlg)(
-    _In_ HWND hwndOwner,
-    _In_opt_ HICON hIcon,
-    _In_opt_ LPCWSTR lpszDirectory,
-    _In_opt_ LPCWSTR lpszTitle,
-    _In_opt_ LPCWSTR lpszDescription,
-    _In_ ULONG uFlags
-    );
-
-typedef HRESULT (WINAPI *_SHAutoComplete)(
-    _In_ HWND hwndEdit,
-    _In_ ULONG dwFlags
-    );
-
-extern _IsImmersiveProcess IsImmersiveProcess_I;
-extern _RunFileDlg RunFileDlg;
-extern _SHAutoComplete SHAutoComplete_I;
 
 extern PH_INTEGER_PAIR PhSmallIconSize;
 extern PH_INTEGER_PAIR PhLargeIconSize;
@@ -183,7 +161,9 @@ INT PhAddListViewColumn(
     );
 
 PHLIBAPI
-INT PhAddListViewItem(
+INT
+NTAPI
+PhAddListViewItem(
     _In_ HWND ListViewHandle,
     _In_ INT Index,
     _In_ PWSTR Text,
@@ -191,31 +171,48 @@ INT PhAddListViewItem(
     );
 
 PHLIBAPI
-INT PhFindListViewItemByFlags(
+INT
+NTAPI
+PhFindListViewItemByFlags(
     _In_ HWND ListViewHandle,
     _In_ INT StartIndex,
     _In_ ULONG Flags
     );
 
 PHLIBAPI
-INT PhFindListViewItemByParam(
+INT
+NTAPI
+PhFindListViewItemByParam(
     _In_ HWND ListViewHandle,
     _In_ INT StartIndex,
     _In_opt_ PVOID Param
     );
 
 PHLIBAPI
-LOGICAL PhGetListViewItemImageIndex(
+BOOLEAN
+NTAPI
+PhGetListViewItemImageIndex(
     _In_ HWND ListViewHandle,
     _In_ INT Index,
     _Out_ PINT ImageIndex
     );
 
 PHLIBAPI
-LOGICAL PhGetListViewItemParam(
+BOOLEAN
+NTAPI
+PhGetListViewItemParam(
     _In_ HWND ListViewHandle,
     _In_ INT Index,
     _Out_ PVOID *Param
+    );
+
+PHLIBAPI
+BOOLEAN
+NTAPI
+PhSetListViewItemParam(
+    _In_ HWND ListViewHandle,
+    _In_ INT Index,
+    _In_ PVOID Param
     );
 
 PHLIBAPI
@@ -513,6 +510,16 @@ PhRemoveWindowContext(
     _In_ ULONG PropertyHash
     );
 
+typedef BOOL (CALLBACK* PH_ENUM_CALLBACK)(
+    _In_ HWND WindowHandle,
+    _In_opt_ PVOID Context
+    );
+
+VOID PhEnumWindows(
+    _In_ PH_ENUM_CALLBACK Callback,
+    _In_opt_ PVOID Context
+    );
+
 typedef BOOLEAN (CALLBACK *PH_CHILD_ENUM_CALLBACK)(
     _In_ HWND WindowHandle, 
     _In_opt_ PVOID Context
@@ -522,7 +529,7 @@ VOID PhEnumChildWindows(
     _In_opt_ HWND WindowHandle,
     _In_ ULONG Limit,
     _In_ PH_CHILD_ENUM_CALLBACK Callback,
-    _In_ PVOID Context
+    _In_opt_ PVOID Context
     );
 
 HWND PhGetProcessMainWindow(
@@ -888,7 +895,7 @@ NTAPI
 PhRegisterWindowCallback(
     _In_ HWND WindowHandle,
     _In_ PH_PLUGIN_WINDOW_EVENT_TYPE Type,
-    _In_ PVOID Context
+    _In_opt_ PVOID Context
     );
 
 PHLIBAPI
@@ -903,6 +910,13 @@ VOID
 NTAPI
 PhWindowNotifyTopMostEvent(
     _In_ BOOLEAN TopMost
+    );
+
+PHLIBAPI
+HANDLE
+NTAPI
+PhGetGlobalTimerQueue(
+    VOID
     );
 
 // theme support (theme.c)
@@ -922,8 +936,29 @@ PhInitializeWindowTheme(
 PHLIBAPI
 VOID
 NTAPI
+PhInitializeWindowThemeEx(
+    _In_ HWND WindowHandle
+    );
+
+PHLIBAPI
+VOID
+NTAPI
 PhReInitializeWindowTheme(
     _In_ HWND WindowHandle
+    );
+
+PHLIBAPI
+VOID
+NTAPI
+PhInitializeThemeWindowFrame(
+    _In_ HWND WindowHandle
+    );
+
+PHLIBAPI
+VOID
+NTAPI
+PhInitializeThemeWindowHeader(
+    _In_ HWND HeaderWindow
     );
 
 PHLIBAPI
@@ -937,6 +972,7 @@ PHLIBAPI
 BOOLEAN
 NTAPI
 PhThemeWindowMeasureItem(
+    _In_ HWND WindowHandle,
     _In_ PMEASUREITEMSTRUCT DrawInfo
     );
 
@@ -945,6 +981,20 @@ VOID
 NTAPI
 PhInitializeWindowThemeStatusBar(
     _In_ HWND StatusBarHandle
+    );
+
+PHLIBAPI
+LRESULT
+CALLBACK
+PhThemeWindowDrawRebar(
+    _In_ LPNMCUSTOMDRAW DrawInfo
+    );
+
+PHLIBAPI
+LRESULT
+CALLBACK
+PhThemeWindowDrawToolbar(
+    _In_ LPNMTBCUSTOMDRAW DrawInfo
     );
 
 FORCEINLINE

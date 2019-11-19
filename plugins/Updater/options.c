@@ -2,7 +2,7 @@
  * Process Hacker Plugins -
  *   Update Checker Plugin
  *
- * Copyright (C) 2011-2016 dmex
+ * Copyright (C) 2011-2019 dmex
  *
  * This file is part of Process Hacker.
  *
@@ -33,8 +33,6 @@ INT_PTR CALLBACK OptionsDlgProc(
     {
     case WM_INITDIALOG:
         {
-            PhCenterWindow(hwndDlg, GetParent(hwndDlg));
-
             if (PhGetIntegerSetting(SETTING_NAME_AUTO_CHECK))
                 Button_SetCheck(GetDlgItem(hwndDlg, IDC_AUTOCHECKBOX), BST_CHECKED);
         }
@@ -75,7 +73,7 @@ INT_PTR CALLBACK TextDlgProc(
             SendMessage(hwndDlg, WM_SETICON, ICON_SMALL, (LPARAM)PH_LOAD_SHARED_ICON_SMALL(PhInstanceHandle, MAKEINTRESOURCE(PHAPP_IDI_PROCESSHACKER)));
             SendMessage(hwndDlg, WM_SETICON, ICON_BIG, (LPARAM)PH_LOAD_SHARED_ICON_LARGE(PhInstanceHandle, MAKEINTRESOURCE(PHAPP_IDI_PROCESSHACKER)));
 
-            SetWindowText(GetDlgItem(hwndDlg, IDC_TEXT), PhGetString(context->BuildMessage));
+            PhSetWindowText(GetDlgItem(hwndDlg, IDC_TEXT), PhGetString(context->BuildMessage));
 
             PhInitializeLayoutManager(&LayoutManager, hwndDlg);
             PhAddLayoutItem(&LayoutManager, GetDlgItem(hwndDlg, IDC_TEXT), NULL, PH_ANCHOR_ALL);

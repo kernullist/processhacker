@@ -31,14 +31,17 @@ VOID PhAddDefaultSettings(
 {
     PhpAddIntegerSetting(L"FirstRun", L"1");
     PhpAddStringSetting(L"Font", L""); // null
+    PhpAddStringSetting(L"DbgHelpSearchPath", L"SRV*C:\\Symbols*https://msdl.microsoft.com/download/symbols");
+    PhpAddIntegerSetting(L"EnableSecurityAdvancedDialog", L"1");
     PhpAddIntegerSetting(L"EnableThemeSupport", L"0");
-    PhpAddIntegerSetting(L"GraphColorMode", L"0");
+    PhpAddIntegerSetting(L"GraphColorMode", L"1");
     PhpAddIntegerSetting(L"HashAlgorithm", L"0");
     PhpAddIntegerSetting(L"MaxSizeUnit", L"6");
     PhpAddStringSetting(L"MainWindowPage", L"General");
     PhpAddIntegerPairSetting(L"MainWindowPosition", L"150,150");
     PhpAddScalableIntegerPairSetting(L"MainWindowSize", L"@96|550,580");
     PhpAddStringSetting(L"ImageGeneralListViewColumns", L"");
+    PhpAddStringSetting(L"ImageGeneralListViewSort", L"");
     PhpAddStringSetting(L"ImageLoadCfgListViewColumns", L"");
     PhpAddStringSetting(L"ImageExportsListViewColumns", L"");
     PhpAddStringSetting(L"ImageImportsListViewColumns", L"");
@@ -49,8 +52,11 @@ VOID PhAddDefaultSettings(
     PhpAddStringSetting(L"ImageStreamsListViewColumns", L"");
     PhpAddStringSetting(L"ImageHardLinksListViewColumns", L"");
     PhpAddStringSetting(L"ImagePidsListViewColumns", L"");
+    PhpAddStringSetting(L"ImageTlsListViewColumns", L"");
     PhpAddStringSetting(L"LibListViewColumns", L"");
     PhpAddStringSetting(L"PdbTreeListColumns", L"");
+
+    PhpAddIntegerSetting(L"TreeListBorderEnable", L"0");
 
     // Wsl properties
     PhpAddStringSetting(L"GeneralWslTreeListColumns", L"");

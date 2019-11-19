@@ -59,7 +59,8 @@
 #define SE_INC_WORKING_SET_PRIVILEGE (33L)
 #define SE_TIME_ZONE_PRIVILEGE (34L)
 #define SE_CREATE_SYMBOLIC_LINK_PRIVILEGE (35L)
-#define SE_MAX_WELL_KNOWN_PRIVILEGE SE_CREATE_SYMBOLIC_LINK_PRIVILEGE
+#define SE_DELEGATE_SESSION_USER_IMPERSONATE_PRIVILEGE (36L)
+#define SE_MAX_WELL_KNOWN_PRIVILEGE SE_DELEGATE_SESSION_USER_IMPERSONATE_PRIVILEGE
 
 // Authz
 
@@ -298,7 +299,7 @@ NtAdjustPrivilegesToken(
     _In_opt_ PTOKEN_PRIVILEGES NewState,
     _In_ ULONG BufferLength,
     _Out_writes_bytes_to_opt_(BufferLength, *ReturnLength) PTOKEN_PRIVILEGES PreviousState,
-    _Out_ _When_(PreviousState == NULL, _Out_opt_) PULONG ReturnLength
+    _Out_opt_ PULONG ReturnLength
     );
 
 NTSYSCALLAPI
@@ -310,7 +311,7 @@ NtAdjustGroupsToken(
     _In_opt_ PTOKEN_GROUPS NewState,
     _In_opt_ ULONG BufferLength,
     _Out_writes_bytes_to_opt_(BufferLength, *ReturnLength) PTOKEN_GROUPS PreviousState,
-    _Out_ PULONG ReturnLength
+    _Out_opt_ PULONG ReturnLength
     );
 
 #if (PHNT_VERSION >= PHNT_WIN8)

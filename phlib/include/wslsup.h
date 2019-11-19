@@ -28,7 +28,7 @@ extern "C" {
 #endif
 
 BOOLEAN PhInitializeLxssImageVersionInfo(
-    _Out_ PPH_IMAGE_VERSION_INFO ImageVersionInfo,
+    _Inout_ PPH_IMAGE_VERSION_INFO ImageVersionInfo,
     _In_ PPH_STRING FileName
     );
 
@@ -36,8 +36,7 @@ ULONG PhCreateProcessLxss(
     _In_ PWSTR LxssDistribution,
     _In_ PWSTR LxssCommandLine,
     _In_opt_ PWSTR LxssCurrentDirectory,
-    _Out_ PPH_STRING *Result,
-    _Out_opt_ PHANDLE ProcessHandle
+    _Out_ PPH_STRING *Result
     );
 
 #ifdef __cplusplus

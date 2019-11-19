@@ -3,7 +3,7 @@
  *   System Information window
  *
  * Copyright (C) 2011-2016 wj32
- * Copyright (C) 2017 dmex
+ * Copyright (C) 2017-2019 dmex
  *
  * This file is part of Process Hacker.
  *
@@ -85,11 +85,11 @@ VOID PhShowSystemInformationDialog(
 {
     InitialSectionName = SectionName;
 
-    if (!PhSipWindow)
+    if (!PhSipThread)
     {
-        if (!(PhSipThread = PhCreateThread(0, PhSipSysInfoThreadStart, NULL)))
+        if (!NT_SUCCESS(PhCreateThreadEx(&PhSipThread, PhSipSysInfoThreadStart, NULL)))
         {
-            PhShowStatus(PhMainWndHandle, L"Unable to create the system information window", 0, GetLastError());
+            PhShowError(PhMainWndHandle, L"Unable to create the window.");
             return;
         }
 
@@ -228,7 +228,7 @@ INT_PTR CALLBACK PhSipSysInfoDialogProc(
         break;
     case WM_COMMAND:
         {
-            PhSipOnCommand(LOWORD(wParam), HIWORD(wParam));
+            PhSipOnCommand((HWND)lParam, LOWORD(wParam), HIWORD(wParam));
         }
         break;
     case WM_NOTIFY:
@@ -248,30 +248,30 @@ INT_PTR CALLBACK PhSipSysInfoDialogProc(
                 return TRUE;
         }
         break;
-    case WM_CTLCOLORBTN: // TODO: theme subclass sysinfo window.
-    case WM_CTLCOLORDLG:
-    case WM_CTLCOLORSTATIC:
-        {
-            if (!PhEnableThemeSupport)
-                break;
-
-            SetBkMode((HDC)wParam, TRANSPARENT);
-
-            switch (PhCsGraphColorMode)
-            {
-            case 0: // New colors
-                SetTextColor((HDC)wParam, RGB(0x0, 0x0, 0x0));
-                SetDCBrushColor((HDC)wParam, RGB(0xef, 0xef, 0xef)); // GetSysColor(COLOR_WINDOW)
-                break;
-            case 1: // Old colors
-                SetTextColor((HDC)wParam, RGB(0xff, 0xff, 0xff));
-                SetDCBrushColor((HDC)wParam, RGB(30, 30, 30));
-                break;
-            }
-
-            return (INT_PTR)GetStockObject(DC_BRUSH);
-        }
-        break;
+    //case WM_CTLCOLORBTN: // TODO: theme subclass sysinfo window.
+    //case WM_CTLCOLORDLG:
+    //case WM_CTLCOLORSTATIC:
+    //    {
+    //        if (!PhEnableThemeSupport)
+    //            break;
+    //
+    //        SetBkMode((HDC)wParam, TRANSPARENT);
+    //
+    //        switch (PhCsGraphColorMode)
+    //        {
+    //        case 0: // New colors
+    //            SetTextColor((HDC)wParam, RGB(0x0, 0x0, 0x0));
+    //            SetDCBrushColor((HDC)wParam, RGB(0xef, 0xef, 0xef)); // GetSysColor(COLOR_WINDOW)
+    //            break;
+    //        case 1: // Old colors
+    //            SetTextColor((HDC)wParam, RGB(0xff, 0xff, 0xff));
+    //            SetDCBrushColor((HDC)wParam, RGB(30, 30, 30));
+    //            break;
+    //        }
+    //
+    //        return (INT_PTR)GetStockBrush(DC_BRUSH);
+    //    }
+    //    break;
     }
 
     if (uMsg >= SI_MSG_SYSINFO_FIRST && uMsg <= SI_MSG_SYSINFO_LAST)
@@ -291,35 +291,35 @@ INT_PTR CALLBACK PhSipContainerDialogProc(
 {
     switch (uMsg)
     {
-    case WM_CTLCOLORBTN: // TODO: theme subclass sysinfo window.
-    case WM_CTLCOLORDLG:
-    case WM_CTLCOLORSTATIC:
-        {
-            SetBkMode((HDC)wParam, TRANSPARENT);
+    //case WM_CTLCOLORBTN: // TODO: theme subclass sysinfo window.
+    //case WM_CTLCOLORDLG:
+    //case WM_CTLCOLORSTATIC:
+    //    {
+    //        SetBkMode((HDC)wParam, TRANSPARENT);
 
-            if (PhEnableThemeSupport)
-            {
-                switch (PhCsGraphColorMode)
-                {
-                case 0: // New colors
-                    SetTextColor((HDC)wParam, RGB(0x0, 0x0, 0x0));
-                    SetDCBrushColor((HDC)wParam, GetSysColor(COLOR_WINDOW));
-                    break;
-                case 1: // Old colors
-                    SetTextColor((HDC)wParam, RGB(0xff, 0xff, 0xff));
-                    SetDCBrushColor((HDC)wParam, RGB(30, 30, 30));
-                    break;
-                }
-            }
-            else
-            {
-                SetTextColor((HDC)wParam, RGB(0x0, 0x0, 0x0));
-                SetDCBrushColor((HDC)wParam, GetSysColor(COLOR_WINDOW));
-            }
+    //        if (PhEnableThemeSupport)
+    //        {
+    //            switch (PhCsGraphColorMode)
+    //            {
+    //            case 0: // New colors
+    //                SetTextColor((HDC)wParam, RGB(0x0, 0x0, 0x0));
+    //                SetDCBrushColor((HDC)wParam, GetSysColor(COLOR_WINDOW));
+    //                break;
+    //            case 1: // Old colors
+    //                SetTextColor((HDC)wParam, RGB(0xff, 0xff, 0xff));
+    //                SetDCBrushColor((HDC)wParam, RGB(30, 30, 30));
+    //                break;
+    //            }
+    //        }
+    //        else
+    //        {
+    //            SetTextColor((HDC)wParam, RGB(0x0, 0x0, 0x0));
+    //            SetDCBrushColor((HDC)wParam, GetSysColor(COLOR_WINDOW));
+    //        }
 
-            return (INT_PTR)GetStockObject(DC_BRUSH);
-        }
-        break;
+    //        return (INT_PTR)GetStockBrush(DC_BRUSH);
+    //    }
+    //    break;
     }
 
     return FALSE;
@@ -397,7 +397,7 @@ VOID PhSipOnInitDialog(
         3,
         3,
         PhSipWindow,
-        (HMENU)IDC_SEPARATOR,
+        NULL,
         PhInstanceHandle,
         NULL
         );
@@ -410,7 +410,7 @@ VOID PhSipOnInitDialog(
         3,
         3,
         PhSipWindow,
-        (HMENU)IDC_RESET,
+        NULL,
         PhInstanceHandle,
         NULL
         );
@@ -464,6 +464,8 @@ VOID PhSipOnInitDialog(
     }
 
     PhRegisterWindowCallback(PhSipWindow, PH_PLUGIN_WINDOW_EVENT_TYPE_TOPMOST, NULL);
+
+    PhInitializeWindowTheme(PhSipWindow, PhEnableThemeSupport);
 
     PhSipOnSize();
     PhSipOnUserMessage(SI_MSG_SYSINFO_UPDATE, 0, 0);
@@ -559,6 +561,7 @@ VOID PhSipOnThemeChanged(
 }
 
 VOID PhSipOnCommand(
+    _In_ HWND HwndControl,
     _In_ ULONG Id,
     _In_ ULONG Code
     )
@@ -567,14 +570,6 @@ VOID PhSipOnCommand(
     {
     case IDCANCEL:
         DestroyWindow(PhSipWindow);
-        break;
-    case IDC_RESET:
-        {
-            if (Code == STN_CLICKED)
-            {
-                PhSipRestoreSummaryView();
-            }
-        }
         break;
     case IDC_BACK:
         {
@@ -653,8 +648,17 @@ VOID PhSipOnCommand(
             }
         }
     }
+
+    if (HwndControl == RestoreSummaryControl)
+    {
+        if (Code == STN_CLICKED)
+        {
+            PhSipRestoreSummaryView();
+        }
+    }
 }
 
+_Success_(return)
 BOOLEAN PhSipOnNotify(
     _In_ NMHDR *Header,
     _Out_ LRESULT *Result
@@ -783,12 +787,12 @@ BOOLEAN PhSipOnDrawItem(
     ULONG i;
     PPH_SYSINFO_SECTION section;
 
-    if (Id == IDC_RESET)
+    if (DrawItemStruct->hwndItem == RestoreSummaryControl)
     {
         PhSipDrawRestoreSummaryPanel(DrawItemStruct);
         return TRUE;
     }
-    else if (Id == IDC_SEPARATOR)
+    else if (DrawItemStruct->hwndItem == SeparatorControl)
     {
         PhSipDrawSeparator(DrawItemStruct);
         return TRUE;
@@ -911,7 +915,7 @@ VOID PhSiSetColorsGraphDrawInfo(
     )
 {
     static PH_QUEUED_LOCK lock = PH_QUEUED_LOCK_INIT;
-    static ULONG lastDpi = -1;
+    static ULONG lastDpi = ULONG_MAX;
     static HFONT iconTitleFont;
 
     // Get the appropriate fonts.
@@ -981,7 +985,7 @@ PPH_STRING PhSiSizeLabelYFunction(
 {
     ULONG64 size;
 
-    size = (ULONG64)(Value * Parameter);
+    size = (ULONG64)((DOUBLE)Value * Parameter);
 
     if (size != 0)
     {
@@ -1056,17 +1060,17 @@ VOID PhSipInitializeParameters(
 
     CurrentParameters.ColorSetupFunction = PhSiSetColorsGraphDrawInfo;
 
-    originalFont = SelectObject(hdc, CurrentParameters.Font);
+    originalFont = SelectFont(hdc, CurrentParameters.Font);
     GetTextMetrics(hdc, &textMetrics);
     CurrentParameters.FontHeight = textMetrics.tmHeight;
     CurrentParameters.FontAverageWidth = textMetrics.tmAveCharWidth;
 
-    SelectObject(hdc, CurrentParameters.MediumFont);
+    SelectFont(hdc, CurrentParameters.MediumFont);
     GetTextMetrics(hdc, &textMetrics);
     CurrentParameters.MediumFontHeight = textMetrics.tmHeight;
     CurrentParameters.MediumFontAverageWidth = textMetrics.tmAveCharWidth;
 
-    SelectObject(hdc, originalFont);
+    SelectFont(hdc, originalFont);
 
     // Internal padding and other values
     CurrentParameters.PanelPadding = PH_SCALE_DPI(PH_SYSINFO_PANEL_PADDING);
@@ -1103,11 +1107,11 @@ VOID PhSipDeleteParameters(
     )
 {
     if (CurrentParameters.Font)
-        DeleteObject(CurrentParameters.Font);
+        DeleteFont(CurrentParameters.Font);
     if (CurrentParameters.MediumFont)
-        DeleteObject(CurrentParameters.MediumFont);
+        DeleteFont(CurrentParameters.MediumFont);
     if (CurrentParameters.LargeFont)
-        DeleteObject(CurrentParameters.LargeFont);
+        DeleteFont(CurrentParameters.LargeFont);
 }
 
 VOID PhSipUpdateColorParameters(
@@ -1134,9 +1138,7 @@ PPH_SYSINFO_SECTION PhSipCreateSection(
     PPH_SYSINFO_SECTION section;
     PH_GRAPH_OPTIONS options;
 
-    section = PhAllocate(sizeof(PH_SYSINFO_SECTION));
-    memset(section, 0, sizeof(PH_SYSINFO_SECTION));
-
+    section = PhAllocateZero(sizeof(PH_SYSINFO_SECTION));
     section->Name = Template->Name;
     section->Flags = Template->Flags;
     section->Callback = Template->Callback;
@@ -1260,7 +1262,7 @@ VOID PhSipDrawRestoreSummaryPanel(
 
     bufferDc = CreateCompatibleDC(hdc);
     bufferBitmap = CreateCompatibleBitmap(hdc, bufferRect.right, bufferRect.bottom);
-    oldBufferBitmap = SelectObject(bufferDc, bufferBitmap);
+    oldBufferBitmap = SelectBitmap(bufferDc, bufferBitmap);
     
     SetBkMode(bufferDc, TRANSPARENT);
 
@@ -1269,20 +1271,22 @@ VOID PhSipDrawRestoreSummaryPanel(
         switch (PhCsGraphColorMode)
         {
         case 0: // New colors
-            SetTextColor(bufferDc, GetSysColor(COLOR_WINDOWTEXT));
-            FillRect(bufferDc, &bufferRect, GetSysColorBrush(COLOR_3DFACE));
+            SetTextColor(bufferDc, RGB(0x00, 0x00, 0x00));
+            SetDCBrushColor(bufferDc, RGB(0xff, 0xff, 0xff));
+            FillRect(bufferDc, &bufferRect, GetStockBrush(DC_BRUSH));
             break;
         case 1: // Old colors
-            SetTextColor(bufferDc, CurrentParameters.PanelForeColor);
-            SetDCBrushColor(bufferDc, RGB(30, 30, 30));
-            FillRect(bufferDc, &bufferRect, GetStockObject(DC_BRUSH));
+            SetTextColor(bufferDc, RGB(0xff, 0xff, 0xff));
+            SetDCBrushColor(bufferDc, RGB(43, 43, 43));
+            FillRect(bufferDc, &bufferRect, GetStockBrush(DC_BRUSH));
             break;
         }
     }
     else
     {
-        SetTextColor(bufferDc, GetSysColor(COLOR_WINDOWTEXT));
-        FillRect(bufferDc, &bufferRect, GetSysColorBrush(COLOR_3DFACE));
+        SetTextColor(bufferDc, RGB(0x00, 0x00, 0x00));
+        SetDCBrushColor(bufferDc, RGB(0xff, 0xff, 0xff));
+        FillRect(bufferDc, &bufferRect, GetStockBrush(DC_BRUSH));
     }
 
     if (RestoreSummaryControlHot || RestoreSummaryControlHasFocus)
@@ -1304,7 +1308,7 @@ VOID PhSipDrawRestoreSummaryPanel(
         }
     }
 
-    SelectObject(bufferDc, CurrentParameters.MediumFont);
+    SelectFont(bufferDc, CurrentParameters.MediumFont);
     DrawText(bufferDc, L"Back", 4, &bufferRect, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
 
     BitBlt(
@@ -1319,8 +1323,8 @@ VOID PhSipDrawRestoreSummaryPanel(
         SRCCOPY
         );
 
-    SelectObject(bufferDc, oldBufferBitmap);
-    DeleteObject(bufferBitmap);
+    SelectBitmap(bufferDc, oldBufferBitmap);
+    DeleteBitmap(bufferBitmap);
     DeleteDC(bufferDc);
 
     ReleaseDC(DrawItemStruct->hwndItem, hdc);
@@ -1346,7 +1350,7 @@ VOID PhSipDrawSeparator(
 
     bufferDc = CreateCompatibleDC(hdc);
     bufferBitmap = CreateCompatibleBitmap(hdc, bufferRect.right, bufferRect.bottom);
-    oldBufferBitmap = SelectObject(bufferDc, bufferBitmap);
+    oldBufferBitmap = SelectBitmap(bufferDc, bufferBitmap);
 
     SetBkMode(bufferDc, TRANSPARENT);
 
@@ -1356,26 +1360,29 @@ VOID PhSipDrawSeparator(
         {
         case 0: // New colors
             {
-                FillRect(bufferDc, &bufferRect, GetSysColorBrush(COLOR_3DFACE));
-                bufferRect.left += 1;
-                FillRect(bufferDc, &bufferRect, GetSysColorBrush(COLOR_3DSHADOW));
-                bufferRect.left -= 1;
+                //FillRect(bufferDc, &bufferRect, GetSysColorBrush(COLOR_3DFACE));
+                //bufferRect.left += 1;
+                //F/illRect(bufferDc, &bufferRect, GetSysColorBrush(COLOR_3DSHADOW));
+                //bufferRect.left -= 1;
             }
             break;
         case 1: // Old colors
             {
-                SetDCBrushColor(bufferDc, RGB(0, 0, 0));
-                FillRect(bufferDc, &bufferRect, GetStockObject(DC_BRUSH));
+                SetDCBrushColor(bufferDc, RGB(43, 43, 43));
+                FillRect(bufferDc, &bufferRect, GetStockBrush(DC_BRUSH));
             }
             break;
         }
     }
     else
     {
-        FillRect(bufferDc, &bufferRect, GetSysColorBrush(COLOR_3DHIGHLIGHT));
-        bufferRect.left += 1;
-        FillRect(bufferDc, &bufferRect, GetSysColorBrush(COLOR_3DSHADOW));
-        bufferRect.left -= 1;
+        //FillRect(bufferDc, &bufferRect, GetSysColorBrush(COLOR_3DHIGHLIGHT));
+        //bufferRect.left += 1;
+        //FillRect(bufferDc, &bufferRect, GetSysColorBrush(COLOR_3DSHADOW));
+        //bufferRect.left -= 1;
+
+        SetDCBrushColor(bufferDc, RGB(0xff, 0xff, 0xff));
+        FillRect(bufferDc, &bufferRect, GetStockBrush(DC_BRUSH));
     }
 
     BitBlt(
@@ -1390,8 +1397,8 @@ VOID PhSipDrawSeparator(
         SRCCOPY
         );
 
-    SelectObject(bufferDc, oldBufferBitmap);
-    DeleteObject(bufferBitmap);
+    SelectBitmap(bufferDc, oldBufferBitmap);
+    DeleteBitmap(bufferBitmap);
     DeleteDC(bufferDc);
 
     ReleaseDC(DrawItemStruct->hwndItem, hdc);
@@ -1412,18 +1419,41 @@ VOID PhSipDrawPanel(
             switch (PhCsGraphColorMode)
             {
             case 0: // New colors
-                FillRect(hdc, Rect, GetSysColorBrush(COLOR_3DFACE));
+                SetTextColor(hdc, RGB(0x00, 0x00, 0x00));
+                SetDCBrushColor(hdc, RGB(0xff, 0xff, 0xff));
+                FillRect(hdc, Rect, GetStockBrush(DC_BRUSH));
                 break;
             case 1: // Old colors
-                SetDCBrushColor(hdc, RGB(30, 30, 30));
-                FillRect(hdc, Rect, GetStockObject(DC_BRUSH));
+                SetTextColor(hdc, RGB(0xff, 0xff, 0xff));
+                SetDCBrushColor(hdc, RGB(43, 43, 43));
+                FillRect(hdc, Rect, GetStockBrush(DC_BRUSH));
                 break;
             }
         }
         else
         {
-            FillRect(hdc, Rect, GetSysColorBrush(COLOR_3DFACE));
+            SetTextColor(hdc, RGB(0x00, 0x00, 0x00));
+            SetDCBrushColor(hdc, RGB(0xff, 0xff, 0xff));
+            FillRect(hdc, Rect, GetStockBrush(DC_BRUSH));
         }
+
+        //if (PhEnableThemeSupport)
+        //{
+        //    switch (PhCsGraphColorMode)
+        //    {
+        //    case 0: // New colors
+        //        FillRect(hdc, Rect, GetSysColorBrush(COLOR_3DFACE));
+        //        break;
+        //    case 1: // Old colors
+        //        SetDCBrushColor(hdc, RGB(30, 30, 30));
+        //        FillRect(hdc, Rect, GetStockBrush(DC_BRUSH));
+        //        break;
+        //    }
+        //}
+        //else
+        //{
+        //    FillRect(hdc, Rect, GetSysColorBrush(COLOR_3DFACE));
+        //}
     }
 
     sysInfoDrawPanel.hdc = hdc;
@@ -1463,17 +1493,17 @@ VOID PhSipDefaultDrawPanel(
     {
         if (CurrentView == SysInfoSummaryView)
         {
-            if (Section->GraphHot)
-            {
-                DrawThemeBackground(
-                    ThemeData,
-                    hdc,
-                    TVP_TREEITEM,
-                    TREIS_HOT,
-                    &DrawPanel->Rect,
-                    &DrawPanel->Rect
-                    );
-            }
+            //if (Section->GraphHot)
+            //{
+            //    DrawThemeBackground(
+            //        ThemeData,
+            //        hdc,
+            //        TVP_TREEITEM,
+            //        TREIS_HOT,
+            //        &DrawPanel->Rect,
+            //        &DrawPanel->Rect
+            //        );
+            //}
         }
         else if (CurrentView == SysInfoSectionView)
         {
@@ -1541,7 +1571,7 @@ VOID PhSipDefaultDrawPanel(
 
             if (brush)
             {
-                FillRect(hdc, &DrawPanel->Rect, brush);
+                //FillRect(hdc, &DrawPanel->Rect, brush);
             }
         }
     }
@@ -1550,14 +1580,34 @@ VOID PhSipDefaultDrawPanel(
 
     if (PhEnableThemeSupport)
     {
-        SetTextColor(hdc, CurrentParameters.PanelForeColor);
+        switch (PhCsGraphColorMode)
+        {
+        case 0: // New colors
+            SetTextColor(hdc, RGB(0x00, 0x00, 0x00));
+            //SetDCBrushColor(hdc, RGB(0xff, 0xff, 0xff));
+            //FillRect(hdc, Rect, GetStockBrush(DC_BRUSH));
+            break;
+        case 1: // Old colors
+            SetTextColor(hdc, RGB(0xff, 0xff, 0xff));
+            //SetDCBrushColor(hdc, RGB(0xff, 0xff, 0x00));
+            //FillRect(hdc, Rect, GetStockBrush(DC_BRUSH));
+            break;
+        }
+
+        //SetTextColor(hdc, CurrentParameters.PanelForeColor);
     }
     else
     {
+        SetTextColor(hdc, RGB(0x00, 0x00, 0x00));
+
         if (CurrentView == SysInfoSummaryView)
+        {
             SetTextColor(hdc, CurrentParameters.PanelForeColor);
+        }
         else
+        {
             SetTextColor(hdc, GetSysColor(COLOR_WINDOWTEXT));
+        }
     }
 
     rect.left = CurrentParameters.SmallGraphPadding + CurrentParameters.PanelPadding;
@@ -1574,7 +1624,7 @@ VOID PhSipDefaultDrawPanel(
 
     if (DrawPanel->Title)
     {
-        SelectObject(hdc, CurrentParameters.MediumFont);
+        SelectFont(hdc, CurrentParameters.MediumFont);
         DrawText(hdc, DrawPanel->Title->Buffer, (ULONG)DrawPanel->Title->Length / sizeof(WCHAR), &rect, flags | DT_SINGLELINE);
     }
 
@@ -1592,7 +1642,7 @@ VOID PhSipDefaultDrawPanel(
         rect.top += CurrentParameters.MediumFontHeight + CurrentParameters.PanelPadding;
         measureRect = rect;
 
-        SelectObject(hdc, CurrentParameters.Font);
+        SelectFont(hdc, CurrentParameters.Font);
         GetTextExtentPoint32(hdc, DrawPanel->SubTitle->Buffer, (ULONG)DrawPanel->SubTitle->Length / sizeof(WCHAR), &textSize);
         DrawText(hdc, DrawPanel->SubTitle->Buffer, (ULONG)DrawPanel->SubTitle->Length / sizeof(WCHAR), &measureRect, flags | DT_CALCRECT);
 

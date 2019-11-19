@@ -3,6 +3,7 @@
  *   ETW monitoring
  *
  * Copyright (C) 2010-2015 wj32
+ * Copyright (C) 2019 dmex
  *
  * This file is part of Process Hacker.
  *
@@ -71,7 +72,6 @@ static PEVENT_TRACE_PROPERTIES EtpTraceProperties;
 static BOOLEAN EtpEtwActive;
 static BOOLEAN EtpStartedSession;
 static BOOLEAN EtpEtwExiting;
-static HANDLE EtpEtwMonitorThreadHandle;
 
 // ETW rundown layer
 
@@ -79,7 +79,6 @@ static UNICODE_STRING EtpRundownLoggerName = RTL_CONSTANT_STRING(L"PhEtRundownLo
 static TRACEHANDLE EtpRundownSessionHandle;
 static PEVENT_TRACE_PROPERTIES EtpRundownTraceProperties;
 static BOOLEAN EtpRundownActive;
-static HANDLE EtpRundownEtwMonitorThreadHandle;
 
 VOID EtEtwMonitorInitialization(
     VOID
@@ -90,7 +89,9 @@ VOID EtEtwMonitorInitialization(
         EtStartEtwSession();
 
         if (EtEtwEnabled)
-            EtpEtwMonitorThreadHandle = PhCreateThread(0, EtpEtwMonitorThreadStart, NULL);
+        {
+            PhCreateThread2(EtpEtwMonitorThreadStart, NULL);
+        }
     }
 }
 
@@ -215,14 +216,14 @@ VOID NTAPI EtpEtwEventCallback(
     _In_ PEVENT_RECORD EventRecord
     )
 {
-    if (memcmp(&EventRecord->EventHeader.ProviderId, &DiskIoGuid_I, sizeof(GUID)) == 0)
+    if (IsEqualGUID(&EventRecord->EventHeader.ProviderId, &DiskIoGuid_I))
     {
         // DiskIo
 
         ET_ETW_DISK_EVENT diskEvent;
 
         memset(&diskEvent, 0, sizeof(ET_ETW_DISK_EVENT));
-        diskEvent.Type = -1;
+        diskEvent.Type = ULONG_MAX;
 
         switch (EventRecord->EventHeader.EventDescriptor.Opcode)
         {
@@ -236,7 +237,7 @@ VOID NTAPI EtpEtwEventCallback(
             break;
         }
 
-        if (diskEvent.Type != -1)
+        if (diskEvent.Type != ULONG_MAX)
         {
             DiskIo_TypeGroup1 *data = EventRecord->UserData;
 
@@ -247,7 +248,7 @@ VOID NTAPI EtpEtwEventCallback(
             }
             else
             {
-                if (EventRecord->EventHeader.ProcessId != -1)
+                if (EventRecord->EventHeader.ProcessId != ULONG_MAX)
                 {
                     diskEvent.ClientId.UniqueProcess = UlongToHandle(EventRecord->EventHeader.ProcessId);
                     diskEvent.ClientId.UniqueThread = UlongToHandle(EventRecord->EventHeader.ThreadId);
@@ -263,14 +264,14 @@ VOID NTAPI EtpEtwEventCallback(
             EtDiskProcessDiskEvent(&diskEvent);
         }
     }
-    else if (memcmp(&EventRecord->EventHeader.ProviderId, &FileIoGuid_I, sizeof(GUID)) == 0)
+    else if (IsEqualGUID(&EventRecord->EventHeader.ProviderId, &FileIoGuid_I))
     {
         // FileIo
 
         ET_ETW_FILE_EVENT fileEvent;
 
         memset(&fileEvent, 0, sizeof(ET_ETW_FILE_EVENT));
-        fileEvent.Type = -1;
+        fileEvent.Type = ULONG_MAX;
 
         switch (EventRecord->EventHeader.EventDescriptor.Opcode)
         {
@@ -287,7 +288,7 @@ VOID NTAPI EtpEtwEventCallback(
             break;
         }
 
-        if (fileEvent.Type != -1)
+        if (fileEvent.Type != ULONG_MAX)
         {
             if (PhIsExecutingInWow64())
             {
@@ -308,8 +309,8 @@ VOID NTAPI EtpEtwEventCallback(
         }
     }
     else if (
-        memcmp(&EventRecord->EventHeader.ProviderId, &TcpIpGuid_I, sizeof(GUID)) == 0 ||
-        memcmp(&EventRecord->EventHeader.ProviderId, &UdpIpGuid_I, sizeof(GUID)) == 0
+        IsEqualGUID(&EventRecord->EventHeader.ProviderId, &TcpIpGuid_I) ||
+        IsEqualGUID(&EventRecord->EventHeader.ProviderId, &UdpIpGuid_I)
         )
     {
         // TcpIp/UdpIp
@@ -317,7 +318,7 @@ VOID NTAPI EtpEtwEventCallback(
         ET_ETW_NETWORK_EVENT networkEvent;
 
         memset(&networkEvent, 0, sizeof(ET_ETW_NETWORK_EVENT));
-        networkEvent.Type = -1;
+        networkEvent.Type = ULONG_MAX;
 
         switch (EventRecord->EventHeader.EventDescriptor.Opcode)
         {
@@ -339,12 +340,12 @@ VOID NTAPI EtpEtwEventCallback(
             break;
         }
 
-        if (memcmp(&EventRecord->EventHeader.ProviderId, &TcpIpGuid_I, sizeof(GUID)) == 0)
+        if (IsEqualGUID(&EventRecord->EventHeader.ProviderId, &TcpIpGuid_I))
             networkEvent.ProtocolType |= PH_TCP_PROTOCOL_TYPE;
         else
             networkEvent.ProtocolType |= PH_UDP_PROTOCOL_TYPE;
 
-        if (networkEvent.Type != -1)
+        if (networkEvent.Type != ULONG_MAX)
         {
             PH_IP_ENDPOINT source;
             PH_IP_ENDPOINT destination;
@@ -357,10 +358,10 @@ VOID NTAPI EtpEtwEventCallback(
                 networkEvent.TransferSize = data->size;
 
                 source.Address.Type = PH_IPV4_NETWORK_TYPE;
-                source.Address.Ipv4 = data->saddr;
+                source.Address.Ipv4 = data->saddr.s_addr;
                 source.Port = _byteswap_ushort(data->sport);
                 destination.Address.Type = PH_IPV4_NETWORK_TYPE;
-                destination.Address.Ipv4 = data->daddr;
+                destination.Address.Ipv4 = data->daddr.s_addr;
                 destination.Port = _byteswap_ushort(data->dport);
             }
             else if (networkEvent.ProtocolType & PH_IPV6_NETWORK_TYPE)
@@ -376,6 +377,16 @@ VOID NTAPI EtpEtwEventCallback(
                 destination.Address.Type = PH_IPV6_NETWORK_TYPE;
                 destination.Address.In6Addr = data->daddr;
                 destination.Port = _byteswap_ushort(data->dport);
+            }
+
+            // Note: The endpoints are swapped for incoming UDP packets. The destination endpoint
+            // corresponds to the local socket not the source endpoint. (DavidXanatos)
+            if ((networkEvent.ProtocolType & PH_UDP_PROTOCOL_TYPE) != 0 &&
+                networkEvent.Type == EtEtwNetworkReceiveType)
+            {
+                PH_IP_ENDPOINT swapsource = source;
+                source = destination;
+                destination = swapsource;
             }
 
             networkEvent.LocalEndpoint = source;
@@ -395,10 +406,6 @@ NTSTATUS EtpEtwMonitorThreadStart(
     ULONG result;
     EVENT_TRACE_LOGFILE logFile;
     TRACEHANDLE traceHandle;
-
-    // See comment in EtEtwProcessesUpdatedCallback.
-    if (WindowsVersion >= WINDOWS_8)
-        EtUpdateProcessInformation();
 
     memset(&logFile, 0, sizeof(EVENT_TRACE_LOGFILE));
     logFile.LoggerName = EtpActualKernelLoggerName->Buffer;
@@ -484,7 +491,7 @@ ULONG EtStartEtwRundown(
     }
 
     EtpRundownActive = TRUE;
-    EtpRundownEtwMonitorThreadHandle = PhCreateThread(0, EtpRundownEtwMonitorThreadStart, NULL);
+    PhCreateThread2(EtpRundownEtwMonitorThreadStart, NULL);
 
     return result;
 }
@@ -511,14 +518,14 @@ VOID NTAPI EtpRundownEtwEventCallback(
     // TODO: Find a way to call CloseTrace when the enumeration finishes so we can
     // stop the trace cleanly.
 
-    if (memcmp(&EventRecord->EventHeader.ProviderId, &FileIoGuid_I, sizeof(GUID)) == 0)
+    if (IsEqualGUID(&EventRecord->EventHeader.ProviderId, &FileIoGuid_I))
     {
         // FileIo
 
         ET_ETW_FILE_EVENT fileEvent;
 
         memset(&fileEvent, 0, sizeof(ET_ETW_FILE_EVENT));
-        fileEvent.Type = -1;
+        fileEvent.Type = ULONG_MAX;
 
         switch (EventRecord->EventHeader.EventDescriptor.Opcode)
         {
@@ -529,7 +536,7 @@ VOID NTAPI EtpRundownEtwEventCallback(
             break;
         }
 
-        if (fileEvent.Type != -1)
+        if (fileEvent.Type != ULONG_MAX)
         {
             if (PhIsExecutingInWow64())
             {
@@ -571,12 +578,9 @@ NTSTATUS EtpRundownEtwMonitorThreadStart(
     {
         ProcessTrace(&traceHandle, 1, NULL, NULL);
 
-        if (traceHandle != 0)
+        if (traceHandle != INVALID_PROCESSTRACE_HANDLE)
             CloseTrace(traceHandle);
     }
-
-    NtClose(EtpRundownEtwMonitorThreadHandle);
-    EtpRundownEtwMonitorThreadHandle = NULL;
 
     return STATUS_SUCCESS;
 }

@@ -212,7 +212,7 @@ HFONT ToolStatusGetTreeWindowFont(
     );
 
 VOID ShowCustomizeMenu(
-    VOID
+    _In_ HWND WindowHandle
     );
 
 // options.c
@@ -296,6 +296,7 @@ VOID ToolbarUpdateGraphs(
     );
 
 BOOLEAN ToolbarUpdateGraphsInfo(
+    _In_ HWND WindowHandle,
     _In_ LPNMHDR Header
     );
 
@@ -318,6 +319,11 @@ PPH_TOOLBAR_GRAPH ToolbarGraphFindByName(
     );
 
 VOID ToolbarGraphCreateMenu(
+    _In_ PPH_EMENU ParentMenu,
+    _In_ ULONG MenuId
+    );
+
+VOID ToolbarGraphCreatePluginMenu(
     _In_ PPH_EMENU ParentMenu,
     _In_ ULONG MenuId
     );
@@ -434,8 +440,6 @@ BOOLEAN CreateSearchboxControl(
     VOID
     );
 
-// 
 extern HFONT ToolStatusWindowFont;
-#define PHAPP_WM_PLUGIN_UPDATE_FONT (WM_APP + 136)
 
 #endif

@@ -114,6 +114,7 @@ EXPORTS
     PhCreateStringEx
     PhCreateThread
     PhCreateThread2
+    PhCreateThreadEx
     PhDecodeUnicodeDecoder
     PhDeleteArray
     PhDeleteBytesBuilder
@@ -240,7 +241,10 @@ EXPORTS
     PhConnectPipe
     PhDeleteDirectory
     PhDeleteFileWin32
+    PhDoesFileExistsWin32
     PhDisconnectNamedPipe
+    PhEnumerateKey
+    PhEnumerateValueKey
     PhEnumDirectoryFile
     PhEnumDirectoryObjects
     PhEnumFileStreams
@@ -298,10 +302,12 @@ EXPORTS
     PhOpenProcess = PhOpenProcessPublic
     PhOpenThread = PhOpenThreadPublic
     PhOpenThreadProcess
+    PhOpenProcessToken = PhOpenProcessTokenPublic
     PhPeekNamedPipe
     PhQueryFullAttributesFileWin32
     PhQueryKey
     PhQueryValueKey
+    PhQueryTokenVariableSize
     PhResolveDevicePrefix
     PhSetFileSize
     PhSetObjectSecurity
@@ -489,6 +495,8 @@ EXPORTS
     PhAddListViewItem
     PhAddTabControlTab
     PhDeleteLayoutManager
+    PhEnumWindows
+    PhEnumChildWindows
     PhFindListViewItemByFlags
     PhFindListViewItemByParam
     PhGetComboBoxString
@@ -526,6 +534,7 @@ EXPORTS
     PhGetDialogItemValue
     PhSetDialogItemValue
     PhSetDialogItemText
+    PhSetWindowText
     PhApplicationFont
     PhTreeWindowFont
     PhRegisterWindowCallback
@@ -533,6 +542,10 @@ EXPORTS
     PhInitializeWindowTheme
     PhReInitializeWindowTheme
     PhInitializeWindowThemeStatusBar
+    PhInitializeThemeWindowHeader
+    PhGetGlobalTimerQueue
+    PhThemeWindowDrawRebar
+    PhThemeWindowDrawToolbar
 
 ; hndlinfo
     PhEnumObjectTypes
@@ -651,7 +664,13 @@ EXPORTS
 
 ; mxml
     mxmlDelete
+    mxmlElementGetAttrCount
+    mxmlElementGetAttrByIndex
     mxmlElementSetAttr
+    mxmlGetFirstChild
+    mxmlGetNextSibling
+    mxmlGetOpaque
+    mxmlGetType
     mxmlLoadFd
     mxmlNewOpaque
     mxmlNewElement
@@ -678,4 +697,30 @@ EXPORTS
 
 ; cache
     PhCreateCacheFile
+    PhClearCacheDirectory
     PhDeleteCacheFile
+
+; appresolver
+    PhAppResolverGetAppIdForWindow
+
+; http
+    PhHttpSocketCreate
+    PhHttpSocketDestroy
+    PhHttpSocketConnect
+    PhHttpSocketBeginRequest
+    PhHttpSocketSendRequest
+    PhHttpSocketEndRequest
+    PhHttpSocketReadData
+    PhHttpSocketWriteData
+    PhHttpSocketAddRequestHeaders
+    PhHttpSocketQueryHeaders
+    PhHttpSocketQueryHeaderString
+    PhHttpSocketQueryHeaderUlong
+    PhHttpSocketQueryOptionString
+    PhHttpSocketReadDataToBuffer
+    PhHttpSocketDownloadString
+    PhHttpSocketSetFeature
+    PhHttpSocketParseUrl
+    PhHttpSocketGetErrorMessage
+    PhHttpSocketSetCredentials
+    PhHttpDnsQuery

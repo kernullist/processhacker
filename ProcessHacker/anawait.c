@@ -97,9 +97,9 @@ PPH_STRING PhpaGetAlpcInformation(
     );
 
 static PH_INITONCE ServiceNumbersInitOnce = PH_INITONCE_INIT;
-static USHORT NumberForWfso = -1;
-static USHORT NumberForWfmo = -1;
-static USHORT NumberForRf = -1;
+static USHORT NumberForWfso = USHRT_MAX;
+static USHORT NumberForWfmo = USHRT_MAX;
+static USHORT NumberForRf = USHRT_MAX;
 
 VOID PhUiAnalyzeWaitThread(
     _In_ HWND hWnd,
@@ -175,7 +175,7 @@ VOID PhUiAnalyzeWaitThread(
     }
     else
     {
-        PhShowInformation(hWnd, L"The thread does not appear to be waiting.");
+        PhShowInformation2(hWnd, L"The thread does not appear to be waiting.", L"");
     }
 
     PhDeleteStringBuilder(&context.StringBuilder);
@@ -769,7 +769,7 @@ static VOID PhpInitializeServiceNumbers(
 
         if (NT_SUCCESS(status))
         {
-            if (threadHandle = PhCreateThread(0, PhpWfsoThreadStart, eventHandle))
+            if (NT_SUCCESS(PhCreateThreadEx(&threadHandle, PhpWfsoThreadStart, eventHandle)))
             {
                 if (PhpWaitUntilThreadIsWaiting(threadHandle))
                 {
@@ -790,7 +790,7 @@ static VOID PhpInitializeServiceNumbers(
 
         if (NT_SUCCESS(status))
         {
-            if (threadHandle = PhCreateThread(0, PhpWfmoThreadStart, eventHandle))
+            if (NT_SUCCESS(PhCreateThreadEx(&threadHandle, PhpWfmoThreadStart, eventHandle)))
             {
                 if (PhpWaitUntilThreadIsWaiting(threadHandle))
                 {
@@ -810,7 +810,7 @@ static VOID PhpInitializeServiceNumbers(
 
         if (NT_SUCCESS(status))
         {
-            if (threadHandle = PhCreateThread(0, PhpRfThreadStart, pipeReadHandle))
+            if (NT_SUCCESS(PhCreateThreadEx(&threadHandle, PhpRfThreadStart, pipeReadHandle)))
             {
                 ULONG data = 0;
                 IO_STATUS_BLOCK isb;
@@ -999,7 +999,7 @@ static PPH_STRING PhpaGetSendMessageReceiver(
     return PhaFormatString(L"Window 0x%Ix (%s): %s \"%s\"", windowHandle, clientIdName->Buffer, windowClass, PhGetStringOrEmpty(windowText));
 }
 
-static PPH_STRING PhpaGetAlpcInformation(
+PPH_STRING PhpaGetAlpcInformation(
     _In_ HANDLE ThreadId
     )
 {

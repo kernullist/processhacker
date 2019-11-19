@@ -26,6 +26,7 @@
 #include <emenu.h>
 #include <settings.h>
 
+#include <apiimport.h>
 #include <phsettings.h>
 #include <procprp.h>
 #include <procprpp.h>
@@ -182,17 +183,17 @@ VOID PhpRefreshEnvironmentList(
     userRootNode = PhpAddEnvironmentNode(Context, NULL, PROCESS_ENVIRONMENT_TREENODE_TYPE_GROUP, PhaCreateString(L"User"), NULL);
     systemRootNode = PhpAddEnvironmentNode(Context, NULL, PROCESS_ENVIRONMENT_TREENODE_TYPE_GROUP, PhaCreateString(L"System"), NULL);
 
-    if (DestroyEnvironmentBlock)
+    if (DestroyEnvironmentBlock_Import())
     {
         if (Context->SystemDefaultEnvironment)
         {
-            DestroyEnvironmentBlock(Context->SystemDefaultEnvironment);
+            DestroyEnvironmentBlock_Import()(Context->SystemDefaultEnvironment);
             Context->SystemDefaultEnvironment = NULL;
         }
 
         if (Context->UserDefaultEnvironment)
         {
-            DestroyEnvironmentBlock(Context->UserDefaultEnvironment);
+            DestroyEnvironmentBlock_Import()(Context->UserDefaultEnvironment);
             Context->UserDefaultEnvironment = NULL;
         }
     }
@@ -206,9 +207,9 @@ VOID PhpRefreshEnvironmentList(
         HANDLE tokenHandle;
         ULONG flags = 0;
 
-        if (CreateEnvironmentBlock)
+        if (CreateEnvironmentBlock_Import())
         {
-            CreateEnvironmentBlock(&Context->SystemDefaultEnvironment, NULL, FALSE);
+            CreateEnvironmentBlock_Import()(&Context->SystemDefaultEnvironment, NULL, FALSE);
 
             if (NT_SUCCESS(PhOpenProcessToken(
                 processHandle,
@@ -216,7 +217,7 @@ VOID PhpRefreshEnvironmentList(
                 &tokenHandle
                 )))
             {
-                CreateEnvironmentBlock(&Context->UserDefaultEnvironment, tokenHandle, FALSE);
+                CreateEnvironmentBlock_Import()(&Context->UserDefaultEnvironment, tokenHandle, FALSE);
                 NtClose(tokenHandle);
             }
         }
@@ -238,11 +239,6 @@ VOID PhpRefreshEnvironmentList(
             while (PhEnumProcessEnvironmentVariables(environment, environmentLength, &enumerationKey, &variable))
             {
                 PH_ENVIRONMENT_ITEM item;
-
-                // Remove the most confusing item. Some say it's just a weird per-drive current directory 
-                // with a colon used as a drive letter for some reason. It should not be here. (diversenok)
-                //if (PhEqualStringRef2(&variable.Name, L"=::", FALSE))
-                //    continue;
 
                 item.Name = PhCreateString2(&variable.Name);
                 item.Value = PhCreateString2(&variable.Value);
@@ -1233,6 +1229,8 @@ VOID PhpDeleteEnvironmentTree(
     _In_ PPH_ENVIRONMENT_CONTEXT Context
     )
 {
+    PhDeleteTreeNewFilterSupport(&Context->TreeFilterSupport);
+
     for (ULONG i = 0; i < Context->NodeList->Count; i++)
     {
         PhpDestroyEnvironmentNode(Context->NodeList->Items[i]);
@@ -1331,6 +1329,9 @@ INT_PTR CALLBACK PhpProcessEnvironmentDlgProc(
         break;
     case WM_DESTROY:
         {
+            PhRemoveTreeNewFilter(&context->TreeFilterSupport, context->TreeFilterEntry);
+            if (context->SearchboxText) PhDereferenceObject(context->SearchboxText);
+
             PhSaveSettingsEnvironmentList(context);
             PhpDeleteEnvironmentTree(context);
 
@@ -1338,12 +1339,12 @@ INT_PTR CALLBACK PhpProcessEnvironmentDlgProc(
             PhDeleteArray(&context->Items);
             PhClearReference(&context->StatusMessage);
 
-            if (DestroyEnvironmentBlock)
+            if (DestroyEnvironmentBlock_Import())
             {
                 if (context->SystemDefaultEnvironment)
-                    DestroyEnvironmentBlock(context->SystemDefaultEnvironment);
+                    DestroyEnvironmentBlock_Import()(context->SystemDefaultEnvironment);
                 if (context->UserDefaultEnvironment)
-                    DestroyEnvironmentBlock(context->UserDefaultEnvironment);
+                    DestroyEnvironmentBlock_Import()(context->UserDefaultEnvironment);
             }
 
             PhFree(context);
@@ -1515,6 +1516,18 @@ INT_PTR CALLBACK PhpProcessEnvironmentDlgProc(
             case PSN_QUERYINITIALFOCUS:
                 SetWindowLongPtr(hwndDlg, DWLP_MSGRESULT, (LPARAM)GetDlgItem(hwndDlg, IDC_REFRESH));
                 return TRUE;
+            }
+        }
+        break;
+    case WM_KEYDOWN:
+        {
+            if (LOWORD(wParam) == 'K')
+            {
+                if (GetKeyState(VK_CONTROL) < 0)
+                {
+                    SetFocus(context->SearchWindowHandle);
+                    return TRUE;
+                }
             }
         }
         break;

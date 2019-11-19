@@ -121,11 +121,11 @@ BOOLEAN ProcessTreeFilterCallback(
             return TRUE;
     }
 
-    if (!PhIsNullOrEmptyString(processNode->ProcessItem->JobName))
-    {
-        if (WordMatchStringRef(&processNode->ProcessItem->JobName->sr))
-            return TRUE;
-    }
+    //if (!PhIsNullOrEmptyString(processNode->ProcessItem->JobName))
+    //{
+    //    if (WordMatchStringRef(&processNode->ProcessItem->JobName->sr))
+    //        return TRUE;
+    //}
 
     if (!PhIsNullOrEmptyString(processNode->ProcessItem->VerifySignerName))
     {
@@ -133,10 +133,29 @@ BOOLEAN ProcessTreeFilterCallback(
             return TRUE;
     }
 
-    if (processNode->ProcessItem->ProcessIdString[0])
+    if (PH_IS_REAL_PROCESS_ID(processNode->ProcessItem->ProcessId) && processNode->ProcessItem->ProcessIdString[0])
     {
         if (WordMatchStringZ(processNode->ProcessItem->ProcessIdString))
             return TRUE;
+
+         // HACK PidHexText from PH_PROCESS_NODE is not exported (dmex)
+        {
+            PH_FORMAT format;
+            SIZE_T returnLength;
+            PH_STRINGREF processIdHex;
+            WCHAR pidHexText[PH_PTR_STR_LEN_1];
+
+            PhInitFormatIX(&format, HandleToUlong(processNode->ProcessItem->ProcessId));
+
+            if (PhFormatToBuffer(&format, 1, pidHexText, sizeof(pidHexText), &returnLength))
+            {
+                processIdHex.Buffer = pidHexText;
+                processIdHex.Length = returnLength - sizeof(UNICODE_NULL);
+
+                if (WordMatchStringRef(&processIdHex))
+                    return TRUE;
+            }
+        }
     }
 
     if (processNode->ProcessItem->ParentProcessIdString[0])

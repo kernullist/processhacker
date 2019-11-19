@@ -97,9 +97,9 @@ VOID EtShowGpuNodesDialog(
 {
     if (!EtGpuNodesThreadHandle)
     {
-        if (!(EtGpuNodesThreadHandle = PhCreateThread(0, EtpGpuNodesDialogThreadStart, ParentWindowHandle)))
+        if (!NT_SUCCESS(PhCreateThreadEx(&EtGpuNodesThreadHandle, EtpGpuNodesDialogThreadStart, ParentWindowHandle)))
         {
-            PhShowStatus(PhMainWndHandle, L"Unable to create the window.", 0, GetLastError());
+            PhShowError(PhMainWndHandle, L"Unable to create the window.");
             return;
         }
 
@@ -337,7 +337,7 @@ INT_PTR CALLBACK EtpGpuNodesDlgProc(
                                 }
 
                                 hdc = Graph_GetBufferedContext(GraphHandle[i]);
-                                SelectObject(hdc, PhApplicationFont);
+                                SelectFont(hdc, PhApplicationFont);
                                 PhSetGraphText(hdc, drawInfo, &GraphState[i].Text->sr,
                                     &NormalGraphTextMargin, &NormalGraphTextPadding, PH_ALIGN_TOP | PH_ALIGN_LEFT);
                             }
@@ -451,7 +451,7 @@ INT_PTR CALLBACK EtpGpuNodesDlgProc(
             for (ULONG i = 0; i < EtGpuTotalNodeCount; i++)
             {
                 GraphState[i].Valid = FALSE;
-                GraphState[i].TooltipIndex = -1;
+                GraphState[i].TooltipIndex = ULONG_MAX;
                 Graph_MoveGrid(GraphHandle[i], 1);
                 Graph_Draw(GraphHandle[i]);
                 Graph_UpdateTooltip(GraphHandle[i]);

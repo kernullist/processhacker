@@ -49,7 +49,7 @@ NTSTATUS NetworkPingThreadStart(
     };
     //pingOptions.Flags |= IP_FLAG_REVERSE;
 
-    if (icmpRandString = PhCreateStringEx(NULL, PhGetIntegerSetting(SETTING_NAME_PING_SIZE) * 2 + 2))
+    if (icmpRandString = PhCreateStringEx(NULL, PhGetIntegerSetting(SETTING_NAME_PING_SIZE) * sizeof(WCHAR) + sizeof(UNICODE_NULL)))
     {
         PhGenerateRandomAlphaString(icmpRandString->Buffer, (ULONG)icmpRandString->Length / sizeof(WCHAR));
 
@@ -100,7 +100,7 @@ NTSTATUS NetworkPingThreadStart(
 
         icmp6ReplyStruct = (PICMPV6_ECHO_REPLY2)icmpReplyBuffer;
 
-        if (icmp6ReplyStruct->Status == IP_SUCCESS)
+        if (icmpReplyCount > 0 && icmp6ReplyStruct->Status == IP_SUCCESS)
         {
             BOOLEAN icmpPacketSignature = FALSE;
 
@@ -173,7 +173,7 @@ NTSTATUS NetworkPingThreadStart(
 
         icmpReplyStruct = (PICMP_ECHO_REPLY)icmpReplyBuffer;
 
-        if (icmpReplyStruct->Status == IP_SUCCESS)
+        if (icmpReplyCount > 0 && icmpReplyStruct->Status == IP_SUCCESS)
         {
             if (icmpReplyStruct->Address != context->RemoteEndpoint.Address.InAddr.s_addr)
             {
@@ -335,8 +335,8 @@ INT_PTR CALLBACK NetworkPingWndProc(
             else
                 PhCenterWindow(hwndDlg, PhMainWndHandle);
 
-            SetWindowText(hwndDlg, PhaFormatString(L"Ping %s", context->IpAddressString)->Buffer);
-            SetWindowText(context->StatusHandle, PhaFormatString(L"Pinging %s with %lu bytes of data...",
+            PhSetWindowText(hwndDlg, PhaFormatString(L"Ping %s", context->IpAddressString)->Buffer);
+            PhSetWindowText(context->StatusHandle, PhaFormatString(L"Pinging %s with %lu bytes of data...",
                 context->IpAddressString,
                 PhGetIntegerSetting(SETTING_NAME_PING_SIZE))->Buffer
                 );
@@ -379,7 +379,7 @@ INT_PTR CALLBACK NetworkPingWndProc(
                 DestroyWindow(context->PingGraphHandle);
 
             if (context->FontHandle)
-                DeleteObject(context->FontHandle);
+                DeleteFont(context->FontHandle);
 
             PhDeleteWorkQueue(&context->PingWorkQueue);
             PhDeleteGraphState(&context->PingGraphState);
@@ -450,7 +450,7 @@ INT_PTR CALLBACK NetworkPingWndProc(
                                 PhFormatString(L"%lu ms", context->CurrentPingMs)
                                 );
 
-                            SelectObject(hdc, PhApplicationFont);
+                            SelectFont(hdc, PhApplicationFont);
                             PhSetGraphText(hdc, drawInfo, &context->PingGraphState.Text->sr,
                                 &NormalGraphTextMargin, &NormalGraphTextPadding, PH_ALIGN_TOP | PH_ALIGN_LEFT);
                         }

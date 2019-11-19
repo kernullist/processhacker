@@ -42,6 +42,11 @@
 #define ASSUME_NO_DEFAULT __assume(FALSE)
 #endif
 
+// Math
+
+#define UInt32Add32To64(a, b)  ((unsigned __int64)((unsigned __int64)(a) + ((unsigned __int64)(b)))) // Avoids warning C26451 (dmex)
+#define UInt32Mul32To64(a, b)  ((unsigned __int64)((unsigned __int64)(a) * ((unsigned __int64)(b))))
+
 // Time
 
 #define PH_TICKS_PER_NS ((LONG64)1 * 10)
@@ -518,7 +523,7 @@ FORCEINLINE VOID PhProbeAddress(
 }
 
 FORCEINLINE PLARGE_INTEGER PhTimeoutFromMilliseconds(
-    _Out_ PLARGE_INTEGER Timeout,
+    _Inout_ PLARGE_INTEGER Timeout,
     _In_ ULONG Milliseconds
     )
 {
@@ -529,6 +534,9 @@ FORCEINLINE PLARGE_INTEGER PhTimeoutFromMilliseconds(
 
     return Timeout;
 }
+
+#define PhTimeoutFromMillisecondsEx(Milliseconds) \
+    &(LARGE_INTEGER) { -(LONGLONG)UInt32x32To64((Milliseconds), PH_TIMEOUT_MS) }
 
 FORCEINLINE NTSTATUS PhGetLastWin32ErrorAsNtStatus(
     VOID

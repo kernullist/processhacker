@@ -390,6 +390,32 @@ NTSTATUS PhpGetObjectName(
     return status;
 }
 
+NTSTATUS PhpGetEtwObjectName(
+    _In_ HANDLE ProcessHandle,
+    _In_ HANDLE Handle,
+    _Out_ PPH_STRING *ObjectName
+    )
+{
+    NTSTATUS status;
+    ETWREG_BASIC_INFORMATION basicInfo;
+
+    status = KphQueryInformationObject(
+        ProcessHandle,
+        Handle,
+        KphObjectEtwRegBasicInformation,
+        &basicInfo,
+        sizeof(ETWREG_BASIC_INFORMATION),
+        NULL
+        );
+
+    if (NT_SUCCESS(status))
+    {
+        *ObjectName = PhFormatGuid(&basicInfo.Guid);
+    }
+
+    return status;
+}
+
 PPH_STRING PhFormatNativeKeyName(
     _In_ PPH_STRING Name
     )
@@ -1343,6 +1369,14 @@ NTSTATUS PhGetHandleInformationEx(
             &objectName
             );
     }
+    else if (PhEqualString2(typeName, L"EtwRegistration", TRUE) && KphIsConnected())
+    {
+        status = PhpGetEtwObjectName(
+            ProcessHandle,
+            Handle,
+            &objectName
+            );
+    }
     else
     {
         // Query the object normally.
@@ -1496,13 +1530,17 @@ PPH_STRING PhGetObjectTypeName(
     _In_ ULONG TypeIndex
     )
 {
+    static PH_INITONCE initOnce = PH_INITONCE_INIT;
     static POBJECT_TYPES_INFORMATION objectTypes = NULL;
     POBJECT_TYPE_INFORMATION objectType;
     PPH_STRING objectTypeName = NULL;
     ULONG i;
 
-    if (!objectTypes) // HACK (dmex)
+    if (PhBeginInitOnce(&initOnce))
+    {
         PhEnumObjectTypes(&objectTypes);
+        PhEndInitOnce(&initOnce);
+    }
 
     if (objectTypes)
     {
@@ -1539,7 +1577,6 @@ PPHP_CALL_WITH_TIMEOUT_THREAD_CONTEXT PhpAcquireCallWithTimeoutThread(
     )
 {
     static PH_INITONCE initOnce = PH_INITONCE_INIT;
-
     PPHP_CALL_WITH_TIMEOUT_THREAD_CONTEXT threadContext;
     PSLIST_ENTRY listEntry;
     PH_QUEUED_WAIT_BLOCK waitBlock;

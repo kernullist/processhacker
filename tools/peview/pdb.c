@@ -211,7 +211,7 @@ BOOLEAN PdbGetSymbolTypedefType(
     Info->TypeIndex = typeIndex;
 
     wcsncpy(Info->Name, symbolName, ARRAYSIZE(Info->Name));
-    Info->Name[ARRAYSIZE(Info->Name) - 1] = 0;
+    Info->Name[ARRAYSIZE(Info->Name) - 1] = UNICODE_NULL;
     LocalFree(symbolName);
 
     return TRUE;
@@ -235,7 +235,7 @@ BOOLEAN PdbGetSymbolEnumType(
         return FALSE;
 
     wcsncpy(Info->Name, symbolName, ARRAYSIZE(Info->Name));
-    Info->Name[ARRAYSIZE(Info->Name) - 1] = 0;
+    Info->Name[ARRAYSIZE(Info->Name) - 1] = UNICODE_NULL;
     LocalFree(symbolName);
 
     // Type index ("typeId" in DIA)
@@ -307,6 +307,7 @@ BOOLEAN PdbGetSymbolArrayType(
     return TRUE;
 }
 
+_Success_(return)
 BOOLEAN SymbolInfo_DumpUDT(
     _In_ ULONG64 BaseAddress,
     _In_ ULONG Index,
@@ -367,7 +368,7 @@ BOOLEAN PdbGetSymbolUDTClass(
         return FALSE;
 
     wcsncpy(Info->Name, symbolName, ARRAYSIZE(Info->Name));
-    Info->Name[ARRAYSIZE(Info->Name) - 1] = 0;
+    Info->Name[ARRAYSIZE(Info->Name) - 1] = UNICODE_NULL;
     LocalFree(symbolName);
 
     // Length ("length" in DIA) 
@@ -423,7 +424,7 @@ BOOLEAN PdbGetSymbolUDTUnion(
         return FALSE;
 
     wcsncpy(Info->Name, symbolName, ARRAYSIZE(Info->Name));
-    Info->Name[ARRAYSIZE(Info->Name) - 1] = 0;
+    Info->Name[ARRAYSIZE(Info->Name) - 1] = UNICODE_NULL;
     LocalFree(symbolName);
 
     // Length ("length" in DIA) 
@@ -649,7 +650,7 @@ BOOLEAN PdbGetSymbolData(
         return FALSE;
 
     wcsncpy(Info->Name, symbolName, ARRAYSIZE(Info->Name));
-    Info->Name[ARRAYSIZE(Info->Name) - 1] = 0;
+    Info->Name[ARRAYSIZE(Info->Name) - 1] = UNICODE_NULL;
     LocalFree(symbolName);
 
     // Index of type symbol ("typeId" in DIA)
@@ -709,6 +710,7 @@ BOOLEAN PdbGetSymbolData(
     return TRUE;
 }
 
+_Success_(return)
 BOOLEAN SymbolInfo_DumpType(
     _In_ ULONG64 BaseAddress,
     _In_ ULONG Index,
@@ -971,7 +973,7 @@ BOOLEAN PdbGetSymbolChildren(
         return TRUE;
 
     length = sizeof(TI_FINDCHILDREN_PARAMS) + symbolCount * sizeof(ULONG);
-    symbols = _alloca(length);
+    symbols = _malloca(length);
     memset(symbols, 0, length);
 
     symbols->Count = symbolCount;
@@ -994,7 +996,7 @@ BOOLEAN PdbGetSymbolUdtVariables(
     )
 {
     ULONG childrenLength = 0;
-    TI_FINDCHILDREN_PARAMS* symbolParams;
+    TI_FINDCHILDREN_PARAMS* symbolParams = NULL;
 
     if (!PdbCheckTagType(BaseAddress, Index, SymTagUDT))
         return FALSE;
@@ -1019,6 +1021,8 @@ BOOLEAN PdbGetSymbolUdtVariables(
                 break;
         }
     }
+
+    _freea(symbolParams);
 
     return TRUE;
 }
@@ -1070,7 +1074,7 @@ BOOLEAN PdbGetSymbolUdtBaseClasses(
     )
 {
     ULONG childrenLength = 0;
-    TI_FINDCHILDREN_PARAMS* symbolParams;
+    TI_FINDCHILDREN_PARAMS* symbolParams = NULL;
 
     if (!PdbCheckTagType(BaseAddress, Index, SymTagUDT))
         return FALSE;
@@ -1096,6 +1100,8 @@ BOOLEAN PdbGetSymbolUdtBaseClasses(
         }
     }
 
+    _freea(symbolParams);
+
     return TRUE;
 }
 
@@ -1108,7 +1114,7 @@ BOOLEAN PdbGetSymbolUdtUnionMembers(
     )
 {
     ULONG childrenLength = 0;
-    TI_FINDCHILDREN_PARAMS* symbolParams;
+    TI_FINDCHILDREN_PARAMS* symbolParams = NULL;
 
     if (!PdbCheckTagType(BaseAddress, Index, SymTagUDT))
         return FALSE;
@@ -1134,6 +1140,8 @@ BOOLEAN PdbGetSymbolUdtUnionMembers(
         }
     }
 
+    _freea(symbolParams);
+
     return TRUE;
 }
 
@@ -1146,7 +1154,7 @@ BOOLEAN PdbGetSymbolFunctionArguments(
     )
 {
     ULONG childrenLength = 0;
-    TI_FINDCHILDREN_PARAMS* symbolParams;
+    TI_FINDCHILDREN_PARAMS* symbolParams = NULL;
 
     if (!PdbCheckTagType(BaseAddress, Index, SymTagFunctionType))
         return FALSE;
@@ -1172,6 +1180,8 @@ BOOLEAN PdbGetSymbolFunctionArguments(
         }
     }
 
+    _freea(symbolParams);
+
     return TRUE;
 }
 
@@ -1184,7 +1194,7 @@ BOOLEAN PdbGetSymbolEnumerations(
     )
 {
     ULONG childrenLength = 0;
-    TI_FINDCHILDREN_PARAMS* symbolParams;
+    TI_FINDCHILDREN_PARAMS* symbolParams = NULL;
 
     if (!PdbCheckTagType(BaseAddress, Index, SymTagEnum))
         return FALSE;
@@ -1209,6 +1219,8 @@ BOOLEAN PdbGetSymbolEnumerations(
                 break;
         }
     }
+
+    _freea(symbolParams);
 
     return TRUE;
 }
@@ -2415,7 +2427,7 @@ NTSTATUS PeDumpFileSymbols(
     if (!SymInitializeW_I(NtCurrentProcess(), NULL, FALSE))
         return 1;
 
-    if (!SymSetSearchPathW_I(NtCurrentProcess(), L"SRV*C:\\symbols*http://msdl.microsoft.com/download/symbols"))
+    if (!SymSetSearchPathW_I(NtCurrentProcess(), L"SRV*C:\\symbols*https://msdl.microsoft.com/download/symbols"))
         goto CleanupExit;
 
     if (!NT_SUCCESS(status = PhCreateFileWin32(

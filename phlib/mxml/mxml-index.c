@@ -1,25 +1,20 @@
 /*
  * Index support code for Mini-XML, a small XML file parsing library.
  *
- * Copyright 2003-2017 by Michael R Sweet.
+ * https://www.msweet.org/mxml
  *
- * These coded instructions, statements, and computer programs are the
- * property of Michael R Sweet and are protected by Federal copyright
- * law.  Distribution and use rights are outlined in the file "COPYING"
- * which should have been included with this file.  If this file is
- * missing or damaged, see the license at:
+ * Copyright © 2003-2019 by Michael R Sweet.
  *
- *     https://michaelrsweet.github.io/mxml
+ * Licensed under Apache License v2.0.  See the file "LICENSE" for more
+ * information.
  */
 
 /*
  * Include necessary headers...
  */
 
-#include <phbase.h>
-
 #include "config.h"
-#include "mxml.h"
+#include "mxml-private.h"
 
 
 /*
@@ -52,12 +47,12 @@ mxmlIndexDelete(mxml_index_t *ind)	/* I - Index to delete */
   */
 
   if (ind->attr)
-      PhFree(ind->attr);
+    free(ind->attr);
 
   if (ind->alloc_nodes)
-      PhFree(ind->nodes);
+    free(ind->nodes);
 
-  PhFree(ind);
+  free(ind);
 }
 
 
@@ -333,7 +328,7 @@ mxmlIndexNew(mxml_node_t *node,		/* I - XML node tree */
   * Create a new index...
   */
 
-  if ((ind = PhAllocateExSafe(sizeof(mxml_index_t), HEAP_ZERO_MEMORY)) == NULL)
+  if ((ind = calloc(1, sizeof(mxml_index_t))) == NULL)
   {
     mxml_error("Unable to allocate %d bytes for index - %s",
                sizeof(mxml_index_t), strerror(errno));
@@ -341,7 +336,7 @@ mxmlIndexNew(mxml_node_t *node,		/* I - XML node tree */
   }
 
   if (attr)
-    ind->attr = PhDuplicateBytesZSafe((char *)attr);
+    ind->attr = strdup(attr);
 
   if (!element && !attr)
     current = node;
@@ -353,9 +348,9 @@ mxmlIndexNew(mxml_node_t *node,		/* I - XML node tree */
     if (ind->num_nodes >= ind->alloc_nodes)
     {
       if (!ind->alloc_nodes)
-        temp = PhAllocateSafe(64 * sizeof(mxml_node_t *));
+        temp = malloc(64 * sizeof(mxml_node_t *));
       else
-        temp = PhReAllocateSafe(ind->nodes, (ind->alloc_nodes + 64) * sizeof(mxml_node_t *));
+        temp = realloc(ind->nodes, (ind->alloc_nodes + 64) * sizeof(mxml_node_t *));
 
       if (!temp)
       {

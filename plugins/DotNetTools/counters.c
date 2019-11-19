@@ -438,7 +438,6 @@ CleanupExit:
 
 BOOLEAN OpenDotNetPublicControlBlock_V2(
     _In_ HANDLE ProcessId,
-    _Out_ HANDLE* BlockTableHandle,
     _Out_ PVOID* BlockTableAddress
     )
 {
@@ -483,9 +482,9 @@ BOOLEAN OpenDotNetPublicControlBlock_V2(
         PAGE_READONLY
         )))
     {
-        *BlockTableHandle = blockTableHandle;
         *BlockTableAddress = blockTableAddress;
 
+        NtClose(blockTableHandle);
         return TRUE;
     }
 
@@ -502,7 +501,6 @@ BOOLEAN OpenDotNetPublicControlBlock_V4(
     _In_ BOOLEAN IsImmersive,
     _In_ HANDLE ProcessHandle,
     _In_ HANDLE ProcessId,
-    _Out_ HANDLE* BlockTableHandle,
     _Out_ PVOID* BlockTableAddress
     )
 {
@@ -535,35 +533,12 @@ BOOLEAN OpenDotNetPublicControlBlock_V4(
     if (!NT_SUCCESS(RtlAddSIDToBoundaryDescriptor(&boundaryDescriptorHandle, everyoneSIDHandle)))
         goto CleanupExit;
 
-    if (WINDOWS_HAS_IMMERSIVE && IsImmersive)
+    if (IsImmersive && WindowsVersion >= WINDOWS_8)
     {
-        if (NT_SUCCESS(NtOpenProcessToken(ProcessHandle, TOKEN_QUERY, &tokenHandle)))
+        if (NT_SUCCESS(PhOpenProcessToken(ProcessHandle, TOKEN_QUERY, &tokenHandle)))
         {
-            ULONG returnLength = 0;
-
-            if (NtQueryInformationToken(
-                tokenHandle,
-                TokenAppContainerSid,
-                NULL,
-                0,
-                &returnLength
-                ) != STATUS_BUFFER_TOO_SMALL)
-            {
+            if (!NT_SUCCESS(PhQueryTokenVariableSize(tokenHandle, TokenAppContainerSid, &appContainerInfo)))
                 goto CleanupExit;
-            }
-
-            appContainerInfo = PhAllocate(returnLength);
-
-            if (!NT_SUCCESS(NtQueryInformationToken(
-                tokenHandle,
-                TokenAppContainerSid,
-                appContainerInfo,
-                returnLength,
-                &returnLength
-                )))
-            {
-                goto CleanupExit;
-            }
 
             if (!NT_SUCCESS(RtlAddSIDToBoundaryDescriptor(&boundaryDescriptorHandle, appContainerInfo->TokenAppContainer)))
                 goto CleanupExit;
@@ -623,7 +598,6 @@ BOOLEAN OpenDotNetPublicControlBlock_V4(
         goto CleanupExit;
     }
 
-    *BlockTableHandle = blockTableHandle;
     *BlockTableAddress = blockTableAddress;
 
     result = TRUE;
@@ -632,18 +606,17 @@ CleanupExit:
 
     if (!result)
     {
-        if (blockTableHandle)
-        {
-            NtClose(blockTableHandle);
-        }
-
         if (blockTableAddress)
         {
             NtUnmapViewOfSection(NtCurrentProcess(), blockTableAddress);
         }
 
-        *BlockTableHandle = NULL;
         *BlockTableAddress = NULL;
+    }
+
+    if (blockTableHandle)
+    {
+        NtClose(blockTableHandle);
     }
 
     if (tokenHandle)

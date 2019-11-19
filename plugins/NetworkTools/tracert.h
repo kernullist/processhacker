@@ -2,7 +2,7 @@
  * Process Hacker Network Tools -
  *   Tracert header
  *
- * Copyright (C) 2015-2017 dmex
+ * Copyright (C) 2015-2019 dmex
  *
  * This file is part of Process Hacker.
  *
@@ -49,9 +49,12 @@ typedef struct _TRACERT_ROOT_NODE
 
     ULONG UniqueId;
     ULONG TTL;
+
     ULONG PingStatus[DEFAULT_MAXIMUM_PINGS];
     ULONG PingList[DEFAULT_MAXIMUM_PINGS];
+
     PPH_STRING PingString[DEFAULT_MAXIMUM_PINGS];
+    PPH_STRING PingMessage[DEFAULT_MAXIMUM_PINGS];
 
     INT CountryIconIndex;
     PPH_STRING TtlString;
@@ -107,6 +110,10 @@ VOID ClearTracertTree(
 
 PTRACERT_ROOT_NODE GetSelectedTracertNode(
     _In_ PNETWORK_TRACERT_CONTEXT Context
+    );
+
+PPH_STRING TracertGetErrorMessage(
+    _In_ IP_STATUS Result
     );
 
 #endif

@@ -1,27 +1,21 @@
 /*
  * File loading code for Mini-XML, a small XML file parsing library.
  *
- * Copyright 2003-2018 by Michael R Sweet.
+ * https://www.msweet.org/mxml
  *
- * These coded instructions, statements, and computer programs are the
- * property of Michael R Sweet and are protected by Federal copyright
- * law.  Distribution and use rights are outlined in the file "COPYING"
- * which should have been included with this file.  If this file is
- * missing or damaged, see the license at:
+ * Copyright © 2003-2019 by Michael R Sweet.
  *
- *     https://michaelrsweet.github.io/mxml
+ * Licensed under Apache License v2.0.  See the file "LICENSE" for more
+ * information.
  */
 
 /*
  * Include necessary headers...
  */
 
- /* dmex: modified to use file handles */
-#include <phbase.h>
-
 #ifndef _WIN32
 #  include <unistd.h>
-#endif /* !WIN32 */
+#endif /* !_WIN32 */
 #include "mxml-private.h"
 
 
@@ -61,42 +55,26 @@ typedef struct _mxml_fdbuf_s		/**** File descriptor buffer ****/
  * Local functions...
  */
 
-static int		mxml_add_char(int ch, char **ptr, char **buffer,
-                          int *bufsize);
+static int		mxml_add_char(int ch, char **ptr, char **buffer, int *bufsize);
 static int		mxml_fd_getc(void *p, int *encoding);
 static int		mxml_fd_putc(int ch, void *p);
 static int		mxml_fd_read(_mxml_fdbuf_t *buf);
 static int		mxml_fd_write(_mxml_fdbuf_t *buf);
 static int		mxml_file_getc(void *p, int *encoding);
 static int		mxml_file_putc(int ch, void *p);
-static int		mxml_get_entity(mxml_node_t *parent, void *p,
-                            int *encoding,
-                    _mxml_getc_cb_t getc_cb);
+static int		mxml_get_entity(mxml_node_t *parent, void *p, int *encoding, _mxml_getc_cb_t getc_cb, int *line);
 static inline int	mxml_isspace(int ch)
             {
-              return (ch == ' ' || ch == '\t' || ch == '\r' ||
-                      ch == '\n');
+              return (ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n');
             }
-static mxml_node_t	*mxml_load_data(mxml_node_t *top, void *p,
-                            mxml_load_cb_t cb,
-                            _mxml_getc_cb_t getc_cb,
-                                        mxml_sax_cb_t sax_cb, void *sax_data);
-static int		mxml_parse_element(mxml_node_t *node, void *p,
-                               int *encoding,
-                       _mxml_getc_cb_t getc_cb);
+static mxml_node_t	*mxml_load_data(mxml_node_t *top, void *p, mxml_load_cb_t cb, _mxml_getc_cb_t getc_cb, mxml_sax_cb_t sax_cb, void *sax_data);
+static int		mxml_parse_element(mxml_node_t *node, void *p, int *encoding, _mxml_getc_cb_t getc_cb, int *line);
 static int		mxml_string_getc(void *p, int *encoding);
 static int		mxml_string_putc(int ch, void *p);
-static int		mxml_write_name(const char *s, void *p,
-                    _mxml_putc_cb_t putc_cb);
-static int		mxml_write_node(mxml_node_t *node, void *p,
-                            mxml_save_cb_t cb, int col,
-                    _mxml_putc_cb_t putc_cb,
-                    _mxml_global_t *global);
-static int		mxml_write_string(const char *s, void *p,
-                      _mxml_putc_cb_t putc_cb);
-static int		mxml_write_ws(mxml_node_t *node, void *p,
-                          mxml_save_cb_t cb, int ws,
-                      int col, _mxml_putc_cb_t putc_cb);
+static int		mxml_write_name(const char *s, void *p, _mxml_putc_cb_t putc_cb);
+static int		mxml_write_node(mxml_node_t *node, void *p, mxml_save_cb_t cb, int col, _mxml_putc_cb_t putc_cb, _mxml_global_t *global);
+static int		mxml_write_string(const char *s, void *p, _mxml_putc_cb_t putc_cb);
+static int		mxml_write_ws(mxml_node_t *node, void *p, mxml_save_cb_t cb, int ws, int col, _mxml_putc_cb_t putc_cb);
 
 
 /*
@@ -246,7 +224,7 @@ mxmlSaveAllocString(
     * return...
     */
 
-    return (PhDuplicateBytesZSafe(buffer));
+    return (strdup(buffer));
   }
 
  /*
@@ -254,7 +232,7 @@ mxmlSaveAllocString(
   * new buffer...
   */
 
-  if ((s = PhAllocateSafe(bytes + 1)) == NULL)
+  if ((s = malloc(bytes + 1)) == NULL)
     return (NULL);
 
   mxmlSaveString(node, s, bytes + 1, cb);
@@ -279,7 +257,7 @@ mxmlSaveAllocString(
 
 int					/* O - 0 on success, -1 on error. */
 mxmlSaveFd(mxml_node_t    *node,	/* I - Node to write */
-           HANDLE         fd,		/* I - File descriptor to write to */
+       HANDLE         fd,		/* I - File descriptor to write to */
        mxml_save_cb_t cb)		/* I - Whitespace callback or @code MXML_NO_CALLBACK@ */
 {
   int		col;			/* Final column */
@@ -608,9 +586,9 @@ mxml_add_char(int  ch,			/* I  - Character to add */
     else
       (*bufsize) += 1024;
 
-    if ((newbuffer = PhReAllocateSafe(*buffer, *bufsize)) == NULL)
+    if ((newbuffer = realloc(*buffer, *bufsize)) == NULL)
     {
-      PhFree(*buffer);
+      free(*buffer);
 
       mxml_error("Unable to expand string buffer to %d bytes!", *bufsize);
 
@@ -1284,8 +1262,9 @@ static int				/* O  - Character value or EOF on error */
 mxml_get_entity(mxml_node_t *parent,	/* I  - Parent node */
         void        *p,		/* I  - Pointer to source */
         int         *encoding,	/* IO - Character encoding */
-                int         (*getc_cb)(void *, int *))
+                int         (*getc_cb)(void *, int *),
                     /* I  - Get character function */
+                int         *line)	/* IO - Current line number */
 {
   int	ch;				/* Current character */
   char	entity[64],			/* Entity string */
@@ -1295,23 +1274,27 @@ mxml_get_entity(mxml_node_t *parent,	/* I  - Parent node */
   entptr = entity;
 
   while ((ch = (*getc_cb)(p, encoding)) != EOF)
+  {
     if (ch > 126 || (!isalnum(ch) && ch != '#'))
       break;
     else if (entptr < (entity + sizeof(entity) - 1))
       *entptr++ = ch;
     else
     {
-      mxml_error("Entity name too long under parent <%s>!",
-             parent ? parent->value.element.name : "null");
+      mxml_error("Entity name too long under parent <%s> on line %d.", parent ? parent->value.element.name : "null", *line);
       break;
     }
+  }
 
   *entptr = '\0';
 
   if (ch != ';')
   {
-    mxml_error("Character entity \"%s\" not terminated under parent <%s>!",
-           entity, parent ? parent->value.element.name : "null");
+    mxml_error("Character entity '%s' not terminated under parent <%s> on line %d.", entity, parent ? parent->value.element.name : "null", *line);
+
+    if (ch == '\n')
+      (*line)++;
+
     return (EOF);
   }
 
@@ -1323,13 +1306,11 @@ mxml_get_entity(mxml_node_t *parent,	/* I  - Parent node */
       ch = (int)strtol(entity + 1, NULL, 10);
   }
   else if ((ch = mxmlEntityGetValue(entity)) < 0)
-    mxml_error("Entity name \"%s;\" not supported under parent <%s>!",
-           entity, parent ? parent->value.element.name : "null");
+    mxml_error("Entity name '%s;' not supported under parent <%s> on line %d.", entity, parent ? parent->value.element.name : "null", *line);
 
   if (mxml_bad_char(ch))
   {
-    mxml_error("Bad control character 0x%02x under parent <%s> not allowed by XML standard!",
-               ch, parent ? parent->value.element.name : "null");
+    mxml_error("Bad control character 0x%02x under parent <%s> on line %d not allowed by XML standard.", ch, parent ? parent->value.element.name : "null", *line);
     return (EOF);
   }
 
@@ -1353,7 +1334,8 @@ mxml_load_data(
   mxml_node_t	*node,			/* Current node */
         *first,			/* First node added */
         *parent;		/* Current parent node */
-  int		ch,			/* Character from file */
+  int		line = 1,		/* Current line number */
+        ch,			/* Character from file */
         whitespace;		/* Non-zero if whitespace seen */
   char		*buffer,		/* String buffer */
         *bufptr;		/* Pointer into buffer */
@@ -1377,7 +1359,7 @@ mxml_load_data(
   * Read elements and other nodes from the file...
   */
 
-  if ((buffer = PhAllocateSafe(64)) == NULL)
+  if ((buffer = malloc(64)) == NULL)
   {
     mxml_error("Unable to allocate string buffer!");
     return (NULL);
@@ -1397,7 +1379,19 @@ mxml_load_data(
   else
     type = MXML_IGNORE;
 
-  while ((ch = (*getc_cb)(p, &encoding)) != EOF)
+  if ((ch = (*getc_cb)(p, &encoding)) == EOF)
+  {
+    free(buffer);
+    return (NULL);
+  }
+  else if (ch != '<' && !top)
+  {
+    free(buffer);
+    mxml_error("XML does not start with '<' (saw '%c').", ch);
+    return (NULL);
+  }
+
+  do
   {
     if ((ch == '<' ||
          (mxml_isspace(ch) && type != MXML_OPAQUE && type != MXML_CUSTOM)) &&
@@ -1438,8 +1432,7 @@ mxml_load_data(
 
           if ((*global->custom_load_cb)(node, buffer))
           {
-            mxml_error("Bad custom value '%s' in parent <%s>!",
-                   buffer, parent ? parent->value.element.name : "null");
+            mxml_error("Bad custom value '%s' in parent <%s> on line %d.", buffer, parent ? parent->value.element.name : "null", line);
         mxmlDelete(node);
         node = NULL;
           }
@@ -1457,9 +1450,7 @@ mxml_load_data(
         * Bad integer/real number value...
     */
 
-        mxml_error("Bad %s value '%s' in parent <%s>!",
-               type == MXML_INTEGER ? "integer" : "real", buffer,
-           parent ? parent->value.element.name : "null");
+        mxml_error("Bad %s value '%s' in parent <%s> on line %d.", type == MXML_INTEGER ? "integer" : "real", buffer, parent ? parent->value.element.name : "null", line);
     break;
       }
 
@@ -1472,8 +1463,7 @@ mxml_load_data(
     * Print error and return...
     */
 
-    mxml_error("Unable to add value node of type %s to parent <%s>!",
-               types[type], parent ? parent->value.element.name : "null");
+    mxml_error("Unable to add value node of type %s to parent <%s> on line %d.", types[type], parent ? parent->value.element.name : "null", line);
     goto error;
       }
 
@@ -1490,6 +1480,9 @@ mxml_load_data(
     }
     else if (mxml_isspace(ch) && type == MXML_TEXT)
       whitespace = 1;
+
+    if (ch == '\n')
+      line ++;
 
    /*
     * Add lone whitespace node if we have an element and existing
@@ -1526,6 +1519,7 @@ mxml_load_data(
       bufptr = buffer;
 
       while ((ch = (*getc_cb)(p, &encoding)) != EOF)
+      {
         if (mxml_isspace(ch) || ch == '>' || (ch == '/' && bufptr > buffer))
       break;
     else if (ch == '<')
@@ -1535,7 +1529,7 @@ mxml_load_data(
     }
     else if (ch == '&')
     {
-      if ((ch = mxml_get_entity(parent, p, &encoding, getc_cb)) == EOF)
+      if ((ch = mxml_get_entity(parent, p, &encoding, getc_cb, &line)) == EOF)
         goto error;
 
       if (mxml_add_char(ch, &bufptr, &buffer, &bufsize))
@@ -1549,6 +1543,10 @@ mxml_load_data(
              ((bufptr - buffer) == 3 && !strncmp(buffer, "!--", 3)) ||
              ((bufptr - buffer) == 8 && !strncmp(buffer, "![CDATA[", 8)))
       break;
+
+    if (ch == '\n')
+      line ++;
+      }
 
       *bufptr = '\0';
 
@@ -1565,6 +1563,9 @@ mxml_load_data(
         break;
       else if (mxml_add_char(ch, &bufptr, &buffer, &bufsize))
         goto error;
+
+      if (ch == '\n')
+        line ++;
     }
 
        /*
@@ -1577,7 +1578,7 @@ mxml_load_data(
       * Print error and return...
       */
 
-      mxml_error("Early EOF in comment node!");
+      mxml_error("Early EOF in comment node on line %d.", line);
       goto error;
     }
 
@@ -1594,8 +1595,7 @@ mxml_load_data(
       * There can only be one root element!
       */
 
-      mxml_error("<%s> cannot be a second root node after <%s>",
-                 buffer, first->value.element.name);
+      mxml_error("<%s> cannot be a second root node after <%s> on line %d.", buffer, first->value.element.name, line);
           goto error;
     }
 
@@ -1605,8 +1605,7 @@ mxml_load_data(
       * Just print error for now...
       */
 
-      mxml_error("Unable to add comment node to parent <%s>!",
-                 parent ? parent->value.element.name : "null");
+      mxml_error("Unable to add comment node to parent <%s> on line %d.", parent ? parent->value.element.name : "null", line);
       break;
     }
 
@@ -1640,6 +1639,9 @@ mxml_load_data(
       }
       else if (mxml_add_char(ch, &bufptr, &buffer, &bufsize))
         goto error;
+
+      if (ch == '\n')
+        line ++;
     }
 
        /*
@@ -1652,7 +1654,7 @@ mxml_load_data(
       * Print error and return...
       */
 
-      mxml_error("Early EOF in CDATA node!");
+      mxml_error("Early EOF in CDATA node on line %d.", line);
       goto error;
     }
 
@@ -1669,8 +1671,7 @@ mxml_load_data(
       * There can only be one root element!
       */
 
-      mxml_error("<%s> cannot be a second root node after <%s>",
-                 buffer, first->value.element.name);
+      mxml_error("<%s> cannot be a second root node after <%s> on line %d.", buffer, first->value.element.name, line);
           goto error;
     }
 
@@ -1680,8 +1681,7 @@ mxml_load_data(
       * Print error and return...
       */
 
-      mxml_error("Unable to add CDATA node to parent <%s>!",
-                 parent ? parent->value.element.name : "null");
+      mxml_error("Unable to add CDATA node to parent <%s> on line %d.", parent ? parent->value.element.name : "null", line);
       goto error;
     }
 
@@ -1708,6 +1708,9 @@ mxml_load_data(
         break;
       else if (mxml_add_char(ch, &bufptr, &buffer, &bufsize))
         goto error;
+
+      if (ch == '\n')
+        line ++;
     }
 
        /*
@@ -1720,7 +1723,7 @@ mxml_load_data(
       * Print error and return...
       */
 
-      mxml_error("Early EOF in processing instruction node!");
+      mxml_error("Early EOF in processing instruction node on line %d.", line);
       goto error;
     }
 
@@ -1736,8 +1739,7 @@ mxml_load_data(
       * There can only be one root element!
       */
 
-      mxml_error("<%s> cannot be a second root node after <%s>",
-                 buffer, first->value.element.name);
+      mxml_error("<%s> cannot be a second root node after <%s> on line %d.", buffer, first->value.element.name, line);
           goto error;
     }
 
@@ -1747,8 +1749,7 @@ mxml_load_data(
       * Print error and return...
       */
 
-      mxml_error("Unable to add processing instruction node to parent <%s>!",
-                 parent ? parent->value.element.name : "null");
+      mxml_error("Unable to add processing instruction node to parent <%s> on line %d.", parent ? parent->value.element.name : "null", line);
       goto error;
     }
 
@@ -1756,7 +1757,7 @@ mxml_load_data(
         {
           (*sax_cb)(node, MXML_SAX_DIRECTIVE, sax_data);
 
-          if (!mxmlRelease(node))
+          if (strncmp(node->value.element.name, "?xml ", 5) && !mxmlRelease(node))
             node = NULL;
         }
 
@@ -1789,12 +1790,17 @@ mxml_load_data(
       else
       {
             if (ch == '&')
-          if ((ch = mxml_get_entity(parent, p, &encoding, getc_cb)) == EOF)
+            {
+          if ((ch = mxml_get_entity(parent, p, &encoding, getc_cb, &line)) == EOF)
         goto error;
+            }
 
         if (mxml_add_char(ch, &bufptr, &buffer, &bufsize))
           goto error;
       }
+
+      if (ch == '\n')
+        line ++;
     }
         while ((ch = (*getc_cb)(p, &encoding)) != EOF);
 
@@ -1808,7 +1814,7 @@ mxml_load_data(
       * Print error and return...
       */
 
-      mxml_error("Early EOF in declaration node!");
+      mxml_error("Early EOF in declaration node on line %d.", line);
       goto error;
     }
 
@@ -1824,8 +1830,7 @@ mxml_load_data(
       * There can only be one root element!
       */
 
-      mxml_error("<%s> cannot be a second root node after <%s>",
-                 buffer, first->value.element.name);
+      mxml_error("<%s> cannot be a second root node after <%s> on line %d.", buffer, first->value.element.name, line);
           goto error;
     }
 
@@ -1835,8 +1840,7 @@ mxml_load_data(
       * Print error and return...
       */
 
-      mxml_error("Unable to add declaration node to parent <%s>!",
-                 parent ? parent->value.element.name : "null");
+      mxml_error("Unable to add declaration node to parent <%s> on line %d.", parent ? parent->value.element.name : "null", line);
       goto error;
     }
 
@@ -1876,8 +1880,7 @@ mxml_load_data(
       * Close tag doesn't match tree; print an error for now...
       */
 
-      mxml_error("Mismatched close tag <%s> under parent <%s>!",
-                 buffer, parent ? parent->value.element.name : "(null)");
+      mxml_error("Mismatched close tag <%s> under parent <%s> on line %d.", buffer, parent ? parent->value.element.name : "(null)", line);
           goto error;
     }
 
@@ -1918,8 +1921,7 @@ mxml_load_data(
       * There can only be one root element!
       */
 
-      mxml_error("<%s> cannot be a second root node after <%s>",
-                 buffer, first->value.element.name);
+      mxml_error("<%s> cannot be a second root node after <%s> on line %d.", buffer, first->value.element.name, line);
           goto error;
     }
 
@@ -1929,22 +1931,20 @@ mxml_load_data(
       * Just print error for now...
       */
 
-      mxml_error("Unable to add element node to parent <%s>!",
-                 parent ? parent->value.element.name : "null");
+      mxml_error("Unable to add element node to parent <%s> on line %d.", parent ? parent->value.element.name : "null", line);
       goto error;
     }
 
         if (mxml_isspace(ch))
         {
-      if ((ch = mxml_parse_element(node, p, &encoding, getc_cb)) == EOF)
+      if ((ch = mxml_parse_element(node, p, &encoding, getc_cb, &line)) == EOF)
         goto error;
         }
         else if (ch == '/')
     {
       if ((ch = (*getc_cb)(p, &encoding)) != '>')
       {
-        mxml_error("Expected > but got '%c' instead for element <%s/>!",
-                   ch, buffer);
+        mxml_error("Expected > but got '%c' instead for element <%s/> on line %d.", ch, buffer, line);
             mxmlDelete(node);
             goto error;
       }
@@ -1991,7 +1991,7 @@ mxml_load_data(
       * Add character entity to current buffer...
       */
 
-      if ((ch = mxml_get_entity(parent, p, &encoding, getc_cb)) == EOF)
+      if ((ch = mxml_get_entity(parent, p, &encoding, getc_cb, &line)) == EOF)
     goto error;
 
       if (mxml_add_char(ch, &bufptr, &buffer, &bufsize))
@@ -2007,12 +2007,13 @@ mxml_load_data(
     goto error;
     }
   }
+  while ((ch = (*getc_cb)(p, &encoding)) != EOF);
 
  /*
   * Free the string buffer - we don't need it anymore...
   */
 
-  PhFree(buffer);
+  free(buffer);
 
  /*
   * Find the top element and return it...
@@ -2027,9 +2028,7 @@ mxml_load_data(
 
     if (node != parent)
     {
-      mxml_error("Missing close tag </%s> under parent <%s>!",
-             node->value.element.name,
-         node->parent ? node->parent->value.element.name : "(null)");
+      mxml_error("Missing close tag </%s> under parent <%s> on line %d.", node->value.element.name, node->parent ? node->parent->value.element.name : "(null)", line);
 
       mxmlDelete(first);
 
@@ -2046,11 +2045,11 @@ mxml_load_data(
   * Common error return...
   */
 
-error:
+  error:
 
   mxmlDelete(first);
 
-  PhFree(buffer);
+  free(buffer);
 
   return (NULL);
 }
@@ -2065,7 +2064,8 @@ mxml_parse_element(
     mxml_node_t     *node,		/* I  - Element node */
     void            *p,			/* I  - Data to read from */
     int             *encoding,		/* IO - Encoding */
-    _mxml_getc_cb_t getc_cb)		/* I  - Data callback */
+    _mxml_getc_cb_t getc_cb,		/* I  - Data callback */
+    int             *line)		/* IO - Current line number */
 {
   int	ch,				/* Current character in file */
     quote;				/* Quoting character */
@@ -2080,7 +2080,7 @@ mxml_parse_element(
   * Initialize the name and value buffers...
   */
 
-  if ((name = PhAllocateSafe(64)) == NULL)
+  if ((name = malloc(64)) == NULL)
   {
     mxml_error("Unable to allocate memory for name!");
     return (EOF);
@@ -2088,9 +2088,9 @@ mxml_parse_element(
 
   namesize = 64;
 
-  if ((value = PhAllocateSafe(64)) == NULL)
+  if ((value = malloc(64)) == NULL)
   {
-    PhFree(name);
+    free(name);
     mxml_error("Unable to allocate memory for value!");
     return (EOF);
   }
@@ -2112,7 +2112,12 @@ mxml_parse_element(
     */
 
     if (mxml_isspace(ch))
+    {
+      if (ch == '\n')
+        (*line)++;
+
       continue;
+    }
 
    /*
     * Stop at /, ?, or >...
@@ -2128,8 +2133,7 @@ mxml_parse_element(
 
       if (quote != '>')
       {
-        mxml_error("Expected '>' after '%c' for element %s, but got '%c'!",
-               ch, node->value.element.name, quote);
+        mxml_error("Expected '>' after '%c' for element %s, but got '%c' on line %d.", ch, node->value.element.name, quote, *line);
         goto error;
       }
 
@@ -2137,7 +2141,7 @@ mxml_parse_element(
     }
     else if (ch == '<')
     {
-      mxml_error("Bare < in element %s!", node->value.element.name);
+      mxml_error("Bare < in element %s on line %d.", node->value.element.name, *line);
       goto error;
     }
     else if (ch == '>')
@@ -2161,8 +2165,12 @@ mxml_parse_element(
       while ((ch = (*getc_cb)(p, encoding)) != EOF)
       {
         if (ch == '&')
-      if ((ch = mxml_get_entity(node, p, encoding, getc_cb)) == EOF)
+        {
+      if ((ch = mxml_get_entity(node, p, encoding, getc_cb, line)) == EOF)
         goto error;
+    }
+    else if (ch == '\n')
+      (*line)++;
 
     if (mxml_add_char(ch, &ptr, &name, &namesize))
       goto error;
@@ -2178,27 +2186,43 @@ mxml_parse_element(
       */
 
       while ((ch = (*getc_cb)(p, encoding)) != EOF)
+      {
     if (mxml_isspace(ch) || ch == '=' || ch == '/' || ch == '>' ||
         ch == '?')
+    {
+      if (ch == '\n')
+        (*line)++;
           break;
+        }
     else
     {
           if (ch == '&')
-        if ((ch = mxml_get_entity(node, p, encoding, getc_cb)) == EOF)
+          {
+        if ((ch = mxml_get_entity(node, p, encoding, getc_cb, line)) == EOF)
           goto error;
+          }
 
       if (mxml_add_char(ch, &ptr, &name, &namesize))
         goto error;
     }
+      }
     }
 
     *ptr = '\0';
 
     if (mxmlElementGetAttr(node, name))
+    {
+      mxml_error("Duplicate attribute '%s' in element %s on line %d.", name, node->value.element.name, name, *line);
       goto error;
+    }
 
     while (ch != EOF && mxml_isspace(ch))
+    {
       ch = (*getc_cb)(p, encoding);
+
+      if (ch == '\n')
+        (*line)++;
+    }
 
     if (ch == '=')
     {
@@ -2206,12 +2230,15 @@ mxml_parse_element(
       * Read the attribute value...
       */
 
-      while ((ch = (*getc_cb)(p, encoding)) != EOF && mxml_isspace(ch));
+      while ((ch = (*getc_cb)(p, encoding)) != EOF && mxml_isspace(ch))
+      {
+        if (ch == '\n')
+          (*line)++;
+      }
 
       if (ch == EOF)
       {
-        mxml_error("Missing value for attribute '%s' in element %s!",
-               name, node->value.element.name);
+        mxml_error("Missing value for attribute '%s' in element %s on line %d.", name, node->value.element.name, *line);
         goto error;
       }
 
@@ -2225,17 +2252,25 @@ mxml_parse_element(
     ptr   = value;
 
         while ((ch = (*getc_cb)(p, encoding)) != EOF)
+        {
       if (ch == quote)
+      {
         break;
+      }
       else
       {
         if (ch == '&')
-          if ((ch = mxml_get_entity(node, p, encoding, getc_cb)) == EOF)
+        {
+          if ((ch = mxml_get_entity(node, p, encoding, getc_cb, line)) == EOF)
             goto error;
+        }
+        else if (ch == '\n')
+          (*line)++;
 
         if (mxml_add_char(ch, &ptr, &value, &valsize))
           goto error;
       }
+    }
 
         *ptr = '\0';
       }
@@ -2249,17 +2284,26 @@ mxml_parse_element(
     ptr      = value + 1;
 
     while ((ch = (*getc_cb)(p, encoding)) != EOF)
+    {
       if (mxml_isspace(ch) || ch == '=' || ch == '/' || ch == '>')
+      {
+        if (ch == '\n')
+          (*line)++;
+
             break;
+          }
       else
       {
         if (ch == '&')
-          if ((ch = mxml_get_entity(node, p, encoding, getc_cb)) == EOF)
+        {
+          if ((ch = mxml_get_entity(node, p, encoding, getc_cb, line)) == EOF)
             goto error;
+        }
 
         if (mxml_add_char(ch, &ptr, &value, &valsize))
           goto error;
       }
+    }
 
         *ptr = '\0';
       }
@@ -2272,8 +2316,7 @@ mxml_parse_element(
     }
     else
     {
-      mxml_error("Missing value for attribute '%s' in element %s!",
-             name, node->value.element.name);
+      mxml_error("Missing value for attribute '%s' in element %s on line %d.", name, node->value.element.name, *line);
       goto error;
     }
 
@@ -2291,8 +2334,7 @@ mxml_parse_element(
 
       if (quote != '>')
       {
-        mxml_error("Expected '>' after '%c' for element %s, but got '%c'!",
-               ch, node->value.element.name, quote);
+        mxml_error("Expected '>' after '%c' for element %s, but got '%c' on line %d.", ch, node->value.element.name, quote, *line);
         ch = EOF;
       }
 
@@ -2306,8 +2348,8 @@ mxml_parse_element(
   * Free the name and value buffers and return...
   */
 
-  PhFree(name);
-  PhFree(value);
+  free(name);
+  free(value);
 
   return (ch);
 
@@ -2315,10 +2357,10 @@ mxml_parse_element(
   * Common error return point...
   */
 
-error:
+  error:
 
-  PhFree(name);
-  PhFree(value);
+  free(name);
+  free(value);
 
   return (EOF);
 }
@@ -2689,7 +2731,7 @@ mxml_write_node(mxml_node_t     *node,	/* I - Node to write */
         *next;			/* Next node */
   int		i,			/* Looping var */
         width;			/* Width of attr + value */
-  mxml_attr_t	*attr;			/* Current attribute */
+  _mxml_attr_t	*attr;			/* Current attribute */
   char		s[255];			/* Temporary string */
 
 
@@ -2847,7 +2889,7 @@ mxml_write_node(mxml_node_t     *node,	/* I - Node to write */
           col ++;
       }
 
-      sprintf(s, "%d", current->value.integer);
+      snprintf(s, sizeof(s), "%d", current->value.integer);
       if (mxml_write_string(s, p, putc_cb) < 0)
         return (-1);
 
@@ -2877,7 +2919,7 @@ mxml_write_node(mxml_node_t     *node,	/* I - Node to write */
           col ++;
       }
 
-      sprintf(s, "%f", current->value.real);
+      snprintf(s, sizeof(s), "%f", current->value.real);
       if (mxml_write_string(s, p, putc_cb) < 0)
         return (-1);
 
@@ -2924,7 +2966,7 @@ mxml_write_node(mxml_node_t     *node,	/* I - Node to write */
         else
           col = (int)strlen(newline);
 
-        PhFree(data);
+        free(data);
         break;
       }
 

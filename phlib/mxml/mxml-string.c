@@ -1,22 +1,17 @@
 /*
  * String functions for Mini-XML, a small XML file parsing library.
  *
- * Copyright 2003-2018 by Michael R Sweet.
+ * https://www.msweet.org/mxml
  *
- * These coded instructions, statements, and computer programs are the
- * property of Michael R Sweet and are protected by Federal copyright
- * law.  Distribution and use rights are outlined in the file "COPYING"
- * which should have been included with this file.  If this file is
- * missing or damaged, see the license at:
+ * Copyright © 2003-2019 by Michael R Sweet.
  *
- *     https://michaelrsweet.github.io/mxml
+ * Licensed under Apache License v2.0.  See the file "LICENSE" for more
+ * information.
  */
 
 /*
  * Include necessary headers...
  */
-
-#include <phbase.h>
 
 #include "config.h"
 
@@ -522,8 +517,7 @@ _mxml_vstrdupf(const char *format,	/* I - Printf-style format string */
 
 #else
   int		bytes;			/* Number of bytes required */
-  char		*buffer,		/* String buffer */
-        temp[256];		/* Small buffer for first vsnprintf */
+  char      *buffer;		/* String buffer */
 
 
  /*
@@ -531,31 +525,29 @@ _mxml_vstrdupf(const char *format,	/* I - Printf-style format string */
   * needed...
   */
 
-#  ifdef WIN32
+#  ifdef _WIN32
   bytes = _vscprintf(format, ap);
 
 #  else
   va_list	apcopy;			/* Copy of argument list */
+  char* temp[256];		/* Small buffer for first vsnprintf */
 
   va_copy(apcopy, ap);
-  bytes = vsnprintf(temp, sizeof(temp), format, apcopy);
-#  endif /* WIN32 */
-
-  if (bytes < sizeof(temp))
+  if ((bytes = vsnprintf(temp, sizeof(temp), format, apcopy)) < sizeof(temp))
   {
    /*
     * Hey, the formatted string fits in the tiny buffer, so just dup that...
     */
 
-    return (PhDuplicateBytesZSafe(temp));
+    return (strdup(temp));
   }
+#  endif /* _WIN32 */
 
  /*
-  * Allocate memory for the whole thing and reformat to the new, larger
-  * buffer...
+  * Allocate memory for the whole thing and reformat to the new buffer...
   */
 
-  if ((buffer = PhAllocateExSafe(bytes + 1, HEAP_ZERO_MEMORY)) != NULL)
+  if ((buffer = calloc(1, bytes + 1)) != NULL)
     vsnprintf(buffer, bytes + 1, format, ap);
 
  /*

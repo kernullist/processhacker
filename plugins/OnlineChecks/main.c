@@ -3,7 +3,7 @@
  *   Main Program
  *
  * Copyright (C) 2010-2013 wj32
- * Copyright (C) 2012-2018 dmex
+ * Copyright (C) 2012-2019 dmex
  *
  * This file is part of Process Hacker.
  *
@@ -153,6 +153,9 @@ VOID NTAPI ShowOptionsCallback(
 {
     PPH_PLUGIN_OPTIONS_POINTERS optionsEntry = (PPH_PLUGIN_OPTIONS_POINTERS)Parameter;
 
+    if (!optionsEntry)
+        return;
+
     optionsEntry->CreateSection(
         L"OnlineChecks",
         PluginInstance->DllBase,
@@ -168,6 +171,9 @@ VOID NTAPI MenuItemCallback(
     )
 {
     PPH_PLUGIN_MENU_ITEM menuItem = Parameter;
+
+    if (!menuItem)
+        return;
 
     switch (menuItem->Id)
     {
@@ -207,8 +213,6 @@ VOID NTAPI MenuItemCallback(
                         );
                     ProcessHacker_Destroy(PhMainWndHandle);
                 }
-
-                DestroyIcon(config.hMainIcon);
             }
         }
         break;
@@ -269,20 +273,23 @@ VOID NTAPI MainMenuInitializingCallback(
     _In_opt_ PVOID Context
     )
 {
+    PPH_PLUGIN_MENU_INFORMATION menuInfo = Parameter;
     PPH_EMENU_ITEM onlineMenuItem;
     PPH_EMENU_ITEM enableMenuItem;
-    PPH_PLUGIN_MENU_INFORMATION menuInfo = Parameter;
+
+    if (!menuInfo)
+        return;
 
     if (menuInfo->u.MainMenu.SubMenuIndex != PH_MENU_ITEM_LOCATION_TOOLS)
         return;
 
     onlineMenuItem = PhPluginCreateEMenuItem(PluginInstance, 0, 0, L"&Online Checks", NULL);
-    PhInsertEMenuItem(onlineMenuItem, enableMenuItem = PhPluginCreateEMenuItem(PluginInstance, 0, ENABLE_SERVICE_VIRUSTOTAL, L"&Enable VirusTotal scanning", NULL), -1);
-    PhInsertEMenuItem(onlineMenuItem, PhCreateEMenuSeparator(), -1);
-    PhInsertEMenuItem(onlineMenuItem, PhPluginCreateEMenuItem(PluginInstance, 0, MENUITEM_HYBRIDANALYSIS_UPLOAD_FILE, L"Upload file to &Hybrid-Analysis...", NULL), -1);
-    PhInsertEMenuItem(onlineMenuItem, PhPluginCreateEMenuItem(PluginInstance, 0, MENUITEM_VIRUSTOTAL_UPLOAD_FILE, L"&Upload file to VirusTotal...", NULL), -1);
-    //PhInsertEMenuItem(onlineMenuItem, PhPluginCreateEMenuItem(PluginInstance, 0, MENUITEM_VIRUSTOTAL_QUEUE, L"Upload unknown files to VirusTotal...", NULL), -1);
-    PhInsertEMenuItem(menuInfo->Menu, onlineMenuItem, -1);
+    PhInsertEMenuItem(onlineMenuItem, enableMenuItem = PhPluginCreateEMenuItem(PluginInstance, 0, ENABLE_SERVICE_VIRUSTOTAL, L"&Enable VirusTotal scanning", NULL), ULONG_MAX);
+    PhInsertEMenuItem(onlineMenuItem, PhCreateEMenuSeparator(), ULONG_MAX);
+    PhInsertEMenuItem(onlineMenuItem, PhPluginCreateEMenuItem(PluginInstance, 0, MENUITEM_HYBRIDANALYSIS_UPLOAD_FILE, L"Upload file to &Hybrid-Analysis...", NULL), ULONG_MAX);
+    PhInsertEMenuItem(onlineMenuItem, PhPluginCreateEMenuItem(PluginInstance, 0, MENUITEM_VIRUSTOTAL_UPLOAD_FILE, L"&Upload file to VirusTotal...", NULL), ULONG_MAX);
+    //PhInsertEMenuItem(onlineMenuItem, PhPluginCreateEMenuItem(PluginInstance, 0, MENUITEM_VIRUSTOTAL_QUEUE, L"Upload unknown files to VirusTotal...", NULL), ULONG_MAX);
+    PhInsertEMenuItem(menuInfo->Menu, onlineMenuItem, ULONG_MAX);
 
     if (VirusTotalScanningEnabled)
         enableMenuItem->Flags |= PH_EMENU_CHECKED;
@@ -299,20 +306,21 @@ PPH_EMENU_ITEM CreateSendToMenu(
     ULONG insertIndex;
 
     sendToMenu = PhPluginCreateEMenuItem(PluginInstance, 0, 0, L"Sen&d to", NULL);
-    PhInsertEMenuItem(sendToMenu, PhPluginCreateEMenuItem(PluginInstance, 0, MENUITEM_HYBRIDANALYSIS_UPLOAD, L"&hybrid-analysis.com", FileName), -1);
-    PhInsertEMenuItem(sendToMenu, PhPluginCreateEMenuItem(PluginInstance, 0, MENUITEM_VIRUSTOTAL_UPLOAD, L"&virustotal.com", FileName), -1);
-    PhInsertEMenuItem(sendToMenu, PhPluginCreateEMenuItem(PluginInstance, 0, MENUITEM_JOTTI_UPLOAD, L"virusscan.&jotti.org", FileName), -1);
+    PhInsertEMenuItem(sendToMenu, PhPluginCreateEMenuItem(PluginInstance, 0, MENUITEM_HYBRIDANALYSIS_UPLOAD, L"&hybrid-analysis.com", FileName), ULONG_MAX);
+    PhInsertEMenuItem(sendToMenu, PhPluginCreateEMenuItem(PluginInstance, 0, MENUITEM_VIRUSTOTAL_UPLOAD, L"&virustotal.com", FileName), ULONG_MAX);
+    PhInsertEMenuItem(sendToMenu, PhPluginCreateEMenuItem(PluginInstance, 0, MENUITEM_JOTTI_UPLOAD, L"virusscan.&jotti.org", FileName), ULONG_MAX);
 
-    if (ProcessesMenu && (menuItem = PhFindEMenuItem(Parent, PH_EMENU_FIND_STARTSWITH, L"Search online", 0)))
+    if (ProcessesMenu && (menuItem = PhFindEMenuItem(Parent, 0, NULL, PHAPP_ID_PROCESS_SEARCHONLINE)))
     {
         insertIndex = PhIndexOfEMenuItem(Parent, menuItem);
-        PhInsertEMenuItem(Parent, sendToMenu, insertIndex + 1);
-        PhInsertEMenuItem(Parent, PhCreateEMenuSeparator(), insertIndex + 2);
+
+        PhInsertEMenuItem(Parent, PhCreateEMenuSeparator(), insertIndex + 1);
+        PhInsertEMenuItem(Parent, sendToMenu, insertIndex + 2);
     }
     else
     {
-        PhInsertEMenuItem(Parent, PhCreateEMenuSeparator(), -1);
-        PhInsertEMenuItem(Parent, sendToMenu, -1);
+        PhInsertEMenuItem(Parent, PhCreateEMenuSeparator(), ULONG_MAX);
+        PhInsertEMenuItem(Parent, sendToMenu, ULONG_MAX);
     }
 
     return sendToMenu;
@@ -326,6 +334,9 @@ VOID NTAPI ProcessMenuInitializingCallback(
     PPH_PLUGIN_MENU_INFORMATION menuInfo = Parameter;
     PPH_PROCESS_ITEM processItem;
     PPH_EMENU_ITEM sendToMenu;
+
+    if (!menuInfo)
+        return;
 
     if (menuInfo->u.Process.NumberOfProcesses == 1)
         processItem = menuInfo->u.Process.Processes[0];
@@ -350,6 +361,9 @@ VOID NTAPI ModuleMenuInitializingCallback(
     PPH_MODULE_ITEM moduleItem;
     PPH_EMENU_ITEM sendToMenu;
 
+    if (!menuInfo)
+        return;
+
     if (menuInfo->u.Module.NumberOfModules == 1)
         moduleItem = menuInfo->u.Module.Modules[0];
     else
@@ -372,17 +386,20 @@ VOID NTAPI ServiceMenuInitializingCallback(
     PPH_SERVICE_ITEM serviceItem;
     PPH_EMENU_ITEM sendToMenu;
 
+    if (!menuInfo)
+        return;
+
     if (menuInfo->u.Service.NumberOfServices == 1)
         serviceItem = menuInfo->u.Service.Services[0];
     else
         serviceItem = NULL;
 
     sendToMenu = PhPluginCreateEMenuItem(PluginInstance, 0, 0, L"Sen&d to", NULL);
-    PhInsertEMenuItem(sendToMenu, PhPluginCreateEMenuItem(PluginInstance, 0, MENUITEM_HYBRIDANALYSIS_UPLOAD_SERVICE, L"&hybrid-analysis.com", serviceItem ? serviceItem : NULL), -1);
-    PhInsertEMenuItem(sendToMenu, PhPluginCreateEMenuItem(PluginInstance, 0, MENUITEM_VIRUSTOTAL_UPLOAD_SERVICE, L"&virustotal.com", serviceItem ? serviceItem : NULL), -1);
-    PhInsertEMenuItem(sendToMenu, PhPluginCreateEMenuItem(PluginInstance, 0, MENUITEM_JOTTI_UPLOAD_SERVICE, L"virusscan.&jotti.org", serviceItem ? serviceItem : NULL), -1);
-    PhInsertEMenuItem(menuInfo->Menu, PhCreateEMenuSeparator(), -1);
-    PhInsertEMenuItem(menuInfo->Menu, sendToMenu, -1);
+    PhInsertEMenuItem(sendToMenu, PhPluginCreateEMenuItem(PluginInstance, 0, MENUITEM_HYBRIDANALYSIS_UPLOAD_SERVICE, L"&hybrid-analysis.com", serviceItem ? serviceItem : NULL), ULONG_MAX);
+    PhInsertEMenuItem(sendToMenu, PhPluginCreateEMenuItem(PluginInstance, 0, MENUITEM_VIRUSTOTAL_UPLOAD_SERVICE, L"&virustotal.com", serviceItem ? serviceItem : NULL), ULONG_MAX);
+    PhInsertEMenuItem(sendToMenu, PhPluginCreateEMenuItem(PluginInstance, 0, MENUITEM_JOTTI_UPLOAD_SERVICE, L"virusscan.&jotti.org", serviceItem ? serviceItem : NULL), ULONG_MAX);
+    PhInsertEMenuItem(menuInfo->Menu, PhCreateEMenuSeparator(), ULONG_MAX);
+    PhInsertEMenuItem(menuInfo->Menu, sendToMenu, ULONG_MAX);
 
     if (!serviceItem)
     {
@@ -476,6 +493,9 @@ VOID NTAPI ProcessTreeNewInitializingCallback(
     PPH_PLUGIN_TREENEW_INFORMATION info = Parameter;
     PH_TREENEW_COLUMN column;
 
+    if (!info)
+        return;
+
     memset(&column, 0, sizeof(PH_TREENEW_COLUMN));
     column.Text = L"VirusTotal";
     column.Width = 140;
@@ -493,6 +513,9 @@ VOID NTAPI ModuleTreeNewInitializingCallback(
 {
     PPH_PLUGIN_TREENEW_INFORMATION info = Parameter;
     PH_TREENEW_COLUMN column;
+
+    if (!info)
+        return;
 
     memset(&column, 0, sizeof(PH_TREENEW_COLUMN));
     column.Text = L"VirusTotal";
@@ -512,6 +535,9 @@ VOID NTAPI ServiceTreeNewInitializingCallback(
     PPH_PLUGIN_TREENEW_INFORMATION info = Parameter;
     PH_TREENEW_COLUMN column;
 
+    if (!info)
+        return;
+
     memset(&column, 0, sizeof(PH_TREENEW_COLUMN));
     column.Text = L"VirusTotal";
     column.Width = 140;
@@ -528,6 +554,9 @@ VOID NTAPI TreeNewMessageCallback(
     )
 {
     PPH_PLUGIN_TREENEW_MESSAGE message = Parameter;
+
+    if (!message)
+        return;
 
     switch (message->Message)
     {

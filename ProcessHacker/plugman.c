@@ -261,7 +261,7 @@ VOID RemovePluginsNode(
 
     PhRemoveEntryHashtable(Context->NodeHashtable, &Node);
 
-    if ((index = PhFindItemList(Context->NodeList, Node)) != -1)
+    if ((index = PhFindItemList(Context->NodeList, Node)) != ULONG_MAX)
     {
         PhRemoveItemList(Context->NodeList, index);
     }
@@ -440,15 +440,23 @@ BOOLEAN NTAPI PluginsTreeNewCallback(
                     rect.bottom -= PH_SCALE_DPI(8);
 
                     // top
-                    SetTextColor(customDraw->Dc, RGB(0x0, 0x0, 0x0));
-                    SelectObject(customDraw->Dc, context->TitleFontHandle);
+                    if (PhEnableThemeSupport)
+                        SetTextColor(customDraw->Dc, GetSysColor(COLOR_HIGHLIGHTTEXT));
+                    else
+                        SetTextColor(customDraw->Dc, RGB(0x0, 0x0, 0x0));
+
+                    SelectFont(customDraw->Dc, context->TitleFontHandle);
                     text = PhIsNullOrEmptyString(node->Name) ? PhGetStringRef(node->InternalName) : PhGetStringRef(node->Name);
                     GetTextExtentPoint32(customDraw->Dc, text.Buffer, (ULONG)text.Length / sizeof(WCHAR), &nameSize);
                     DrawText(customDraw->Dc, text.Buffer, (ULONG)text.Length / sizeof(WCHAR), &rect, DT_TOP | DT_LEFT | DT_END_ELLIPSIS | DT_SINGLELINE);
 
                     // bottom
-                    SetTextColor(customDraw->Dc, RGB(0x64, 0x64, 0x64));
-                    SelectObject(customDraw->Dc, context->NormalFontHandle);
+                    if (PhEnableThemeSupport)
+                        SetTextColor(customDraw->Dc, RGB(0x90, 0x90, 0x90));
+                    else
+                        SetTextColor(customDraw->Dc, RGB(0x64, 0x64, 0x64));
+
+                    SelectFont(customDraw->Dc, context->NormalFontHandle);
                     text = PhGetStringRef(node->Description);
                     GetTextExtentPoint32(customDraw->Dc, text.Buffer, (ULONG)text.Length / sizeof(WCHAR), &textSize);
                     DrawText(
@@ -546,7 +554,7 @@ VOID InitializePluginsTree(
 
     PhAddTreeNewColumnEx2(Context->TreeNewHandle, PH_PLUGIN_TREE_COLUMN_ITEM_NAME, TRUE, L"Plugin", 80, PH_ALIGN_LEFT, 0, 0, TN_COLUMN_FLAG_CUSTOMDRAW);
     PhAddTreeNewColumnEx2(Context->TreeNewHandle, PH_PLUGIN_TREE_COLUMN_ITEM_AUTHOR, TRUE, L"Author", 80, PH_ALIGN_LEFT, 1, 0, 0);
-    PhAddTreeNewColumnEx2(Context->TreeNewHandle, PH_PLUGIN_TREE_COLUMN_ITEM_VERSION, TRUE, L"Version", 80, PH_ALIGN_CENTER, 2, DT_CENTER, 0);
+    //PhAddTreeNewColumnEx2(Context->TreeNewHandle, PH_PLUGIN_TREE_COLUMN_ITEM_VERSION, TRUE, L"Version", 80, PH_ALIGN_CENTER, 2, DT_CENTER, 0);
 
     TreeNew_SetTriState(Context->TreeNewHandle, TRUE);
 
@@ -558,9 +566,9 @@ VOID DeletePluginsTree(
     )
 {
     if (Context->TitleFontHandle)
-        DeleteObject(Context->TitleFontHandle);
+        DeleteFont(Context->TitleFontHandle);
     if (Context->NormalFontHandle)
-        DeleteObject(Context->NormalFontHandle);
+        DeleteFont(Context->NormalFontHandle);
 
     PluginsSaveSettingsTreeList(Context);
 
@@ -735,11 +743,11 @@ INT_PTR CALLBACK PhpPluginsDlgProc(
                         break;
 
                     menu = PhCreateEMenu();
-                    //PhInsertEMenuItem(menu, uninstallItem = PhCreateEMenuItem(0, PH_PLUGIN_TREE_ITEM_MENU_UNINSTALL, L"Uninstall", NULL, NULL), -1);
-                    //PhInsertEMenuItem(menu, PhCreateEMenuSeparator(), -1);
-                    PhInsertEMenuItem(menu, PhCreateEMenuItem(0, PH_PLUGIN_TREE_ITEM_MENU_DISABLE, L"Disable", NULL, NULL), -1);
-                    PhInsertEMenuItem(menu, PhCreateEMenuSeparator(), -1);
-                    PhInsertEMenuItem(menu, PhCreateEMenuItem(0, PH_PLUGIN_TREE_ITEM_MENU_PROPERTIES, L"Properties", NULL, NULL), -1);
+                    //PhInsertEMenuItem(menu, uninstallItem = PhCreateEMenuItem(0, PH_PLUGIN_TREE_ITEM_MENU_UNINSTALL, L"Uninstall", NULL, NULL), ULONG_MAX);
+                    //PhInsertEMenuItem(menu, PhCreateEMenuSeparator(), ULONG_MAX);
+                    PhInsertEMenuItem(menu, PhCreateEMenuItem(0, PH_PLUGIN_TREE_ITEM_MENU_DISABLE, L"Disable", NULL, NULL), ULONG_MAX);
+                    PhInsertEMenuItem(menu, PhCreateEMenuSeparator(), ULONG_MAX);
+                    PhInsertEMenuItem(menu, PhCreateEMenuItem(0, PH_PLUGIN_TREE_ITEM_MENU_PROPERTIES, L"Properties", NULL, NULL), ULONG_MAX);
 
                     //if (!PhGetOwnTokenAttributes().Elevated)
                     //{
@@ -758,7 +766,7 @@ INT_PTR CALLBACK PhpPluginsDlgProc(
                         contextMenuEvent->Location.y
                         );
 
-                    if (selectedItem && selectedItem->Id != -1)
+                    if (selectedItem && selectedItem->Id != ULONG_MAX)
                     {
                         switch (selectedItem->Id)
                         {
@@ -895,9 +903,9 @@ VOID PhShowPluginsDialog(
     {
         if (!PhPluginsThreadHandle)
         {
-            if (!(PhPluginsThreadHandle = PhCreateThread(0, PhpPluginsDialogThreadStart, NULL)))
+            if (!NT_SUCCESS(PhCreateThreadEx(&PhPluginsThreadHandle, PhpPluginsDialogThreadStart, NULL)))
             {
-                PhShowStatus(PhMainWndHandle, L"Unable to create the window.", 0, GetLastError());
+                PhShowError(PhMainWndHandle, L"Unable to create the window.");
                 return;
             }
 
@@ -1113,6 +1121,7 @@ INT_PTR CALLBACK PhpPluginsDisabledDlgProc(
         {
             PhRemoveWindowContext(hwndDlg, PH_WINDOW_CONTEXT_DEFAULT);
             PhFree(context);
+            context = NULL;
         }
     }
 

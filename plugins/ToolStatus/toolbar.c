@@ -115,10 +115,9 @@ VOID RebarLoadSettings(
 
         HFONT newFont;
 
-        if (newFont = ToolStatusGetTreeWindowFont())
+        if (newFont = (HFONT)SendMessage(PhMainWndHandle, WM_PH_GET_FONT, 0, 0))
         {
-            if (ToolStatusWindowFont)
-                DeleteObject(ToolStatusWindowFont);
+            if (ToolStatusWindowFont) DeleteFont(ToolStatusWindowFont);
             ToolStatusWindowFont = newFont;
         }
     }
@@ -130,7 +129,7 @@ VOID RebarLoadSettings(
             REBARCLASSNAME,
             NULL,
             WS_CHILD | WS_CLIPSIBLINGS | WS_CLIPCHILDREN | CCS_NODIVIDER | CCS_TOP | RBS_VARHEIGHT | RBS_AUTOSIZE, // CCS_NOPARENTALIGN
-            CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
+            0, 0, 0, 0,
             PhMainWndHandle,
             NULL,
             NULL,
@@ -142,7 +141,7 @@ VOID RebarLoadSettings(
             TOOLBARCLASSNAME,
             NULL,
             WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS | WS_CLIPCHILDREN | CCS_NOPARENTALIGN | CCS_NODIVIDER | TBSTYLE_FLAT | TBSTYLE_LIST | TBSTYLE_TRANSPARENT | TBSTYLE_TOOLTIPS | TBSTYLE_AUTOSIZE,
-            CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
+            0, 0, 0, 0,
             RebarHandle,
             NULL,
             NULL,
@@ -155,11 +154,13 @@ VOID RebarLoadSettings(
         SendMessage(ToolBarHandle, TB_BUTTONSTRUCTSIZE, sizeof(TBBUTTON), 0);
         // Set the toolbar extended toolbar styles.
         SendMessage(ToolBarHandle, TB_SETEXTENDEDSTYLE, 0, TBSTYLE_EX_DOUBLEBUFFER | TBSTYLE_EX_MIXEDBUTTONS | TBSTYLE_EX_HIDECLIPPEDBUTTONS);
-        // Configure the toolbar imagelist.
-        SendMessage(ToolBarHandle, TB_SETIMAGELIST, 0, (LPARAM)ToolBarImageList);
+
         // Add the buttons to the toolbar.
         ToolbarLoadButtonSettings();
-        SendMessage(ToolBarHandle, WM_SETFONT, (WPARAM)ToolStatusWindowFont, FALSE);
+        // Configure the toolbar imagelist.
+        SendMessage(ToolBarHandle, TB_SETIMAGELIST, 0, (LPARAM)ToolBarImageList);
+        // Configure the toolbar font.
+        SetWindowFont(ToolBarHandle, ToolStatusWindowFont, FALSE);
         // Resize the toolbar.
         SendMessage(ToolBarHandle, TB_AUTOSIZE, 0, 0);
 
@@ -673,7 +674,7 @@ VOID ToolbarLoadButtonSettings(
         PhStringToInteger64(&commandIdPart, 10, &commandInteger);
 
         buttonArray[index].idCommand = (INT)commandInteger;
-        //buttonArray[index].iBitmap = I_IMAGECALLBACK;
+        buttonArray[index].iBitmap = I_IMAGECALLBACK;
         buttonArray[index].fsState = TBSTATE_ENABLED;
 
         if (commandInteger)
@@ -692,16 +693,20 @@ VOID ToolbarLoadButtonSettings(
             {
                 HBITMAP bitmap;
 
-                bitmap = ToolbarGetImage(ToolbarButtons[i].idCommand);
+                if (buttonArray[index].fsStyle & BTNS_SEP)
+                    continue;
 
-                // Add the image, cache the value in the ToolbarButtons array, set the bitmap index.
-                buttonArray[index].iBitmap = ToolbarButtons[i].iBitmap = ImageList_Add(
-                    ToolBarImageList,
-                    bitmap,
-                    NULL
-                    );
+                if (bitmap = ToolbarGetImage(ToolbarButtons[i].idCommand))
+                {
+                    // Add the image, cache the value in the ToolbarButtons array, set the bitmap index.
+                    buttonArray[index].iBitmap = ToolbarButtons[i].iBitmap = ImageList_Add(
+                        ToolBarImageList,
+                        bitmap,
+                        NULL
+                        );
 
-                DeleteObject(bitmap);
+                    DeleteBitmap(bitmap);
+                }
                 break;
             }
         }

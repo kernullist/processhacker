@@ -112,10 +112,10 @@ VOID WeShowWindowsDialog(
         context = PhAllocateZero(sizeof(WINDOWS_CONTEXT));
         memcpy(&context->Selector, Selector, sizeof(WE_WINDOW_SELECTOR));
 
-        if (!(WepWindowsDialogThreadHandle = PhCreateThread(0, WepShowWindowsDialogThread, context)))
+        if (!NT_SUCCESS(PhCreateThreadEx(&WepWindowsDialogThreadHandle, WepShowWindowsDialogThread, context)))
         {
             PhFree(context);
-            PhShowStatus(NULL, L"Unable to create the window.", 0, GetLastError());
+            PhShowError(ParentWindowHandle, L"Unable to create the window.");
             return;
         }
 
@@ -196,7 +196,7 @@ VOID WepFillWindowInfo(
             {
                 if (NT_SUCCESS(PhGetProcessMappedFileName(processHandle, instanceHandle, &fileName)))
                 {
-                    PhMoveReference(&fileName, PhResolveDevicePrefix(fileName));
+                    PhMoveReference(&fileName, PhGetFileName(fileName));
                     PhMoveReference(&fileName, PhGetBaseName(fileName));
 
                     PhMoveReference(&Node->ModuleString, fileName);
@@ -422,7 +422,7 @@ INT_PTR CALLBACK WepWindowsDlgProc(
             context->TreeNewHandle = GetDlgItem(hwndDlg, IDC_LIST);
             context->SearchBoxHandle = GetDlgItem(hwndDlg, IDC_SEARCHEDIT);
 
-            SetWindowText(hwndDlg, PH_AUTO_T(PH_STRING, WepGetWindowTitleForSelector(&context->Selector))->Buffer);
+            PhSetWindowText(hwndDlg, PH_AUTO_T(PH_STRING, WepGetWindowTitleForSelector(&context->Selector))->Buffer);
 
             PhCreateSearchControl(hwndDlg, context->SearchBoxHandle, L"Search Windows (Ctrl+K)");
             WeInitializeWindowTree(hwndDlg, context->TreeNewHandle, &context->TreeContext);
@@ -621,7 +621,7 @@ INT_PTR CALLBACK WepWindowsDlgProc(
                             contextMenuEvent->Location.y
                             );
 
-                        if (selectedItem && selectedItem->Id != -1)
+                        if (selectedItem && selectedItem->Id != ULONG_MAX)
                         {
                             BOOLEAN handled = FALSE;
 
@@ -638,11 +638,12 @@ INT_PTR CALLBACK WepWindowsDlgProc(
 
                     if (selectedNode = WeGetSelectedWindowNode(&context->TreeContext))
                     {
-                        WINDOWPLACEMENT placement = { sizeof(placement) };
+                        WINDOWPLACEMENT placement = { sizeof(WINDOWPLACEMENT) };
 
-                        GetWindowPlacement(selectedNode->WindowHandle, &placement);
+                        if (!GetWindowPlacement(selectedNode->WindowHandle, &placement))
+                            break;
 
-                        if (placement.showCmd == SW_SHOWMINIMIZED)
+                        if (placement.showCmd == SW_SHOWMINIMIZED || placement.showCmd == SW_MINIMIZE)
                         {
                             ShowWindowAsync(selectedNode->WindowHandle, SW_RESTORE);
                         }
@@ -1062,7 +1063,7 @@ INT_PTR CALLBACK WepWindowsPageProc(
                             contextMenuEvent->Location.y
                             );
 
-                        if (selectedItem && selectedItem->Id != -1)
+                        if (selectedItem && selectedItem->Id != ULONG_MAX)
                         {
                             BOOLEAN handled = FALSE;
 
@@ -1301,6 +1302,18 @@ INT_PTR CALLBACK WepWindowsPageProc(
             case PSN_QUERYINITIALFOCUS:
                 SetWindowLongPtr(hwndDlg, DWLP_MSGRESULT, (LPARAM)GetDlgItem(hwndDlg, IDC_REFRESH));
                 return TRUE;
+            }
+        }
+        break;
+    case WM_KEYDOWN:
+        {
+            if (LOWORD(wParam) == 'K')
+            {
+                if (GetKeyState(VK_CONTROL) < 0)
+                {
+                    SetFocus(context->SearchBoxHandle);
+                    return TRUE;
+                }
             }
         }
         break;

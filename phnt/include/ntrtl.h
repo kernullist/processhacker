@@ -1408,7 +1408,7 @@ VOID
 NTAPI
 RtlInitEmptyUnicodeString(
     _Out_ PUNICODE_STRING DestinationString,
-    _In_ PWCHAR Buffer,
+    _In_opt_ PWCHAR Buffer,
     _In_ USHORT MaximumLength
     )
 {
@@ -1424,7 +1424,7 @@ FORCEINLINE VOID RtlInitUnicodeString(
     )
 {
     if (SourceString)
-        DestinationString->MaximumLength = (DestinationString->Length = (USHORT)(wcslen(SourceString) * sizeof(WCHAR))) + sizeof(WCHAR);
+        DestinationString->MaximumLength = (DestinationString->Length = (USHORT)(wcslen(SourceString) * sizeof(WCHAR))) + sizeof(UNICODE_NULL);
     else
         DestinationString->MaximumLength = DestinationString->Length = 0;
 
@@ -2539,7 +2539,11 @@ typedef struct _RTL_USER_PROCESS_PARAMETERS
     PVOID PackageDependencyData;
     ULONG ProcessGroupId;
     ULONG LoaderThreads;
+
     UNICODE_STRING RedirectionDllName; // REDSTONE4
+    UNICODE_STRING HeapPartitionName; // 19H1
+    ULONG_PTR DefaultThreadpoolCpuSetMasks;
+    ULONG DefaultThreadpoolCpuSetMaskCount;
 } RTL_USER_PROCESS_PARAMETERS, *PRTL_USER_PROCESS_PARAMETERS;
 
 #define RTL_USER_PROC_PARAMS_NORMALIZED 0x00000001
@@ -2615,8 +2619,8 @@ RtlDeNormalizeProcessParams(
 typedef struct _RTL_USER_PROCESS_INFORMATION
 {
     ULONG Length;
-    HANDLE Process;
-    HANDLE Thread;
+    HANDLE ProcessHandle;
+    HANDLE ThreadHandle;
     CLIENT_ID ClientId;
     SECTION_IMAGE_INFORMATION ImageInformation;
 } RTL_USER_PROCESS_INFORMATION, *PRTL_USER_PROCESS_INFORMATION;
@@ -2635,6 +2639,17 @@ RtlCreateUserProcess(
     _In_ BOOLEAN InheritHandles,
     _In_opt_ HANDLE DebugPort,
     _In_opt_ HANDLE TokenHandle, // used to be ExceptionPort
+    _Out_ PRTL_USER_PROCESS_INFORMATION ProcessInformation
+    );
+
+NTSYSAPI
+NTSTATUS
+NTAPI
+RtlCreateUserProcessEx(
+    _In_ PUNICODE_STRING NtImagePathName,
+    _In_ PRTL_USER_PROCESS_PARAMETERS ProcessParameters,
+    _In_ BOOLEAN InheritHandles,
+    _Reserved_ ULONG Flags,
     _Out_ PRTL_USER_PROCESS_INFORMATION ProcessInformation
     );
 
@@ -3264,7 +3279,7 @@ NTSYSAPI
 NTSTATUS
 NTAPI
 RtlSetEnvironmentVar(
-    _In_opt_ PWSTR *Environment,
+    _Inout_opt_ PVOID *Environment,
     _In_reads_(NameLength) PWSTR Name,
     _In_ SIZE_T NameLength,
     _In_reads_(ValueLength) PWSTR Value,
@@ -3276,7 +3291,7 @@ NTSYSAPI
 NTSTATUS
 NTAPI
 RtlSetEnvironmentVariable(
-    _In_opt_ PVOID *Environment,
+    _Inout_opt_ PVOID *Environment,
     _In_ PUNICODE_STRING Name,
     _In_opt_ PUNICODE_STRING Value
     );
@@ -3302,7 +3317,7 @@ NTAPI
 RtlQueryEnvironmentVariable_U(
     _In_opt_ PVOID Environment,
     _In_ PUNICODE_STRING Name,
-    _Out_ PUNICODE_STRING Value
+    _Inout_ PUNICODE_STRING Value
     );
 
 #if (PHNT_VERSION >= PHNT_VISTA)
@@ -3326,7 +3341,7 @@ NTAPI
 RtlExpandEnvironmentStrings_U(
     _In_opt_ PVOID Environment,
     _In_ PUNICODE_STRING Source,
-    _Out_ PUNICODE_STRING Destination,
+    _Inout_ PUNICODE_STRING Destination,
     _Out_opt_ PULONG ReturnedLength
     );
 
@@ -4085,8 +4100,16 @@ RtlWalkHeap(
 #define HeapOptimizeResources 0x3 // q; s: HEAP_OPTIMIZE_RESOURCES_INFORMATION 
 #define HeapTaggingInformation 0x4
 #define HeapStackDatabase 0x5
+#define HeapMemoryLimit 0x6 // 19H2
 #define HeapDetailedFailureInformation 0x80000001
 #define HeapSetDebuggingInformation 0x80000002 // q; s: HEAP_DEBUGGING_INFORMATION
+
+typedef enum _HEAP_COMPATIBILITY_MODE
+{
+    HEAP_COMPATIBILITY_STANDARD = 0UL,
+    HEAP_COMPATIBILITY_LAL = 1UL,
+    HEAP_COMPATIBILITY_LFH = 2UL,
+} HEAP_COMPATIBILITY_MODE;
 
 typedef struct _PROCESS_HEAP_INFORMATION
 {
@@ -4113,8 +4136,11 @@ typedef struct _HEAP_EXTENDED_INFORMATION
     ULONG Level;
     PVOID CallbackRoutine;
     PVOID CallbackContext;
-    PROCESS_HEAP_INFORMATION ProcessHeapInformation;
-    HEAP_INFORMATION HeapInformation;
+    union
+    {
+        PROCESS_HEAP_INFORMATION ProcessHeapInformation;
+        HEAP_INFORMATION HeapInformation;
+    };
 } HEAP_EXTENDED_INFORMATION, *PHEAP_EXTENDED_INFORMATION;
 
 // rev
@@ -6648,14 +6674,14 @@ NTSYSAPI
 NTSTATUS
 NTAPI
 RtlGetVersion(
-    _Out_ PRTL_OSVERSIONINFOW lpVersionInformation
+    _Out_ PRTL_OSVERSIONINFOEXW VersionInformation // PRTL_OSVERSIONINFOW
     );
 
 NTSYSAPI
 NTSTATUS
 NTAPI
 RtlVerifyVersionInfo(
-    _In_ PRTL_OSVERSIONINFOEXW VersionInfo,
+    _In_ PRTL_OSVERSIONINFOEXW VersionInformation, // PRTL_OSVERSIONINFOW
     _In_ ULONG TypeMask,
     _In_ ULONGLONG ConditionMask
     );
@@ -6819,7 +6845,7 @@ NTAPI
 RtlDeleteTimer(
     _In_ HANDLE TimerQueueHandle,
     _In_ HANDLE TimerToCancel,
-    _In_ HANDLE Event
+    _In_opt_ HANDLE Event
     );
 
 NTSYSAPI
@@ -7473,6 +7499,7 @@ typedef struct _RTL_IMAGE_MITIGATION_PAYLOAD_RESTRICTION_POLICY
     RTL_IMAGE_MITIGATION_POLICY EnableRopStackPivot;
     RTL_IMAGE_MITIGATION_POLICY EnableRopCallerCheck;
     RTL_IMAGE_MITIGATION_POLICY EnableRopSimExec;
+    WCHAR EafPlusModuleList[512]; // 19H1
 } RTL_IMAGE_MITIGATION_PAYLOAD_RESTRICTION_POLICY, *PRTL_IMAGE_MITIGATION_PAYLOAD_RESTRICTION_POLICY;
 
 // rev
@@ -7642,6 +7669,15 @@ RtlCheckTokenMembershipEx(
     _In_ PSID SidToCheck,
     _In_ ULONG Flags, // CTMF_VALID_FLAGS
     _Out_ PBOOLEAN IsMember
+    );
+
+// rev
+NTSYSAPI
+NTSTATUS
+NTAPI
+RtlQueryTokenHostIdAsUlong64(
+    _In_ HANDLE TokenHandle,
+    _Out_ PULONG64 HostId // (WIN://PKGHOSTID)
     );
 
 // rev

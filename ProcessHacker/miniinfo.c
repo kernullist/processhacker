@@ -123,7 +123,7 @@ VOID PhPinMiniInformation(
 
             PhMipContainerWindow = CreateWindow(
                 MAKEINTATOM(windowAtom),
-                PhGetIntegerSetting(L"EnableWindowText") ? L"Process Hacker" : NULL,
+                PhGetIntegerSetting(L"EnableWindowText") ? PhApplicationName : NULL,
                 WS_BORDER | WS_THICKFRAME | WS_POPUP,
                 0,
                 0,
@@ -486,7 +486,7 @@ VOID PhMipOnShowWindow(
     SectionList = PhCreateList(8);
     PhMipInitializeParameters();
 
-    SendMessage(GetDlgItem(PhMipWindow, IDC_SECTION), WM_SETFONT, (WPARAM)CurrentParameters.MediumFont, FALSE);
+    SetWindowFont(GetDlgItem(PhMipWindow, IDC_SECTION), CurrentParameters.MediumFont, FALSE);
 
     PhMipCreateInternalListSection(L"CPU", 0, PhMipCpuListSectionCallback);
     PhMipCreateInternalListSection(L"Commit charge", 0, PhMipCommitListSectionCallback);
@@ -783,19 +783,19 @@ VOID PhMipInitializeParameters(
     logFont.lfHeight -= PhMultiplyDivide(2, PhGlobalDpi, 72);
     CurrentParameters.MediumFont = CreateFontIndirect(&logFont);
 
-    originalFont = SelectObject(hdc, CurrentParameters.Font);
+    originalFont = SelectFont(hdc, CurrentParameters.Font);
     GetTextMetrics(hdc, &textMetrics);
     CurrentParameters.FontHeight = textMetrics.tmHeight;
     CurrentParameters.FontAverageWidth = textMetrics.tmAveCharWidth;
 
-    SelectObject(hdc, CurrentParameters.MediumFont);
+    SelectFont(hdc, CurrentParameters.MediumFont);
     GetTextMetrics(hdc, &textMetrics);
     CurrentParameters.MediumFontHeight = textMetrics.tmHeight;
     CurrentParameters.MediumFontAverageWidth = textMetrics.tmAveCharWidth;
 
     CurrentParameters.SetSectionText = PhMipSetSectionText;
 
-    SelectObject(hdc, originalFont);
+    SelectFont(hdc, originalFont);
     ReleaseDC(PhMipWindow, hdc);
 }
 
@@ -1087,6 +1087,33 @@ VOID PhMipShowSectionMenu(
     PhMipEndChildControlPin();
 }
 
+PPH_EMENU PhpMipCreateMenu(
+    VOID
+    )
+{
+    PPH_EMENU menu;
+    PPH_EMENU_ITEM menuItem;
+
+    menu = PhCreateEMenu();
+    menuItem = PhCreateEMenuItem(0, 0, L"&Opacity", NULL, NULL);
+    PhInsertEMenuItem(menuItem, PhCreateEMenuItem(0, ID_OPACITY_10, L"10%", NULL, NULL), ULONG_MAX);
+    PhInsertEMenuItem(menuItem, PhCreateEMenuItem(0, ID_OPACITY_20, L"20%", NULL, NULL), ULONG_MAX);
+    PhInsertEMenuItem(menuItem, PhCreateEMenuItem(0, ID_OPACITY_30, L"30%", NULL, NULL), ULONG_MAX);
+    PhInsertEMenuItem(menuItem, PhCreateEMenuItem(0, ID_OPACITY_40, L"40%", NULL, NULL), ULONG_MAX);
+    PhInsertEMenuItem(menuItem, PhCreateEMenuItem(0, ID_OPACITY_50, L"50%", NULL, NULL), ULONG_MAX);
+    PhInsertEMenuItem(menuItem, PhCreateEMenuItem(0, ID_OPACITY_60, L"60%", NULL, NULL), ULONG_MAX);
+    PhInsertEMenuItem(menuItem, PhCreateEMenuItem(0, ID_OPACITY_70, L"70%", NULL, NULL), ULONG_MAX);
+    PhInsertEMenuItem(menuItem, PhCreateEMenuItem(0, ID_OPACITY_80, L"80%", NULL, NULL), ULONG_MAX);
+    PhInsertEMenuItem(menuItem, PhCreateEMenuItem(0, ID_OPACITY_90, L"90%", NULL, NULL), ULONG_MAX);
+    PhInsertEMenuItem(menuItem, PhCreateEMenuItem(0, ID_OPACITY_OPAQUE, L"Opaque", NULL, NULL), ULONG_MAX);
+    PhInsertEMenuItem(menu, menuItem, ULONG_MAX);
+    PhInsertEMenuItem(menu, PhCreateEMenuSeparator(), ULONG_MAX);
+    PhInsertEMenuItem(menu, PhCreateEMenuItem(0, ID_MINIINFO_REFRESH, L"&Refresh\bF5", NULL, NULL), ULONG_MAX);
+    PhInsertEMenuItem(menu, PhCreateEMenuItem(0, ID_MINIINFO_REFRESHAUTOMATICALLY, L"Refresh a&utomatically\bF6", NULL, NULL), ULONG_MAX);
+
+    return menu;
+}
+
 VOID PhMipShowOptionsMenu(
     VOID
     )
@@ -1097,8 +1124,10 @@ VOID PhMipShowOptionsMenu(
     RECT rect;
 
     PhMipBeginChildControlPin();
-    menu = PhCreateEMenu();
-    PhLoadResourceEMenuItem(menu, PhInstanceHandle, MAKEINTRESOURCE(IDR_MINIINFO), 0);
+
+    // Menu
+
+    menu = PhpMipCreateMenu(); 
 
     // Opacity
 
@@ -1540,7 +1569,7 @@ BOOLEAN PhMipListSectionTreeNewCallback(
                 0, NULL, DI_NORMAL);
             rect.left += (MIP_CELL_PADDING - MIP_ICON_PADDING) + PhLargeIconSize.X + MIP_CELL_PADDING;
             rect.top += MIP_CELL_PADDING - MIP_ICON_PADDING;
-            SelectObject(hdc, CurrentParameters.Font);
+            SelectFont(hdc, CurrentParameters.Font);
 
             // This color changes depending on whether the node is selected, etc.
             originalTextColor = GetTextColor(hdc);
@@ -1825,7 +1854,8 @@ VOID PhMipShowListSectionContextMenu(
     menu = PhCreateEMenu();
     // TODO: If there are multiple processes, then create submenus for each process.
     PhAddMiniProcessMenuItems(menu, ListSection->SelectedRepresentativeProcessId);
-    PhLoadResourceEMenuItem(menu, PhInstanceHandle, MAKEINTRESOURCE(IDR_MINIINFO_PROCESS), 0);
+    PhInsertEMenuItem(menu, PhCreateEMenuSeparator(), ULONG_MAX);
+    PhInsertEMenuItem(menu, PhCreateEMenuItem(0, ID_PROCESS_GOTOPROCESS, L"&Go to process", NULL, NULL), ULONG_MAX);
     PhSetFlagsEMenuItem(menu, ID_PROCESS_GOTOPROCESS, PH_EMENU_DEFAULT, PH_EMENU_DEFAULT);
 
     if (selectedNode->ProcessGroup->Processes->Count != 1)

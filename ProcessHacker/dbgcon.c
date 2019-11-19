@@ -90,10 +90,11 @@ VOID PhShowDebugConsole(
         // Set a handler so we can catch Ctrl+C and Ctrl+Break.
         SetConsoleCtrlHandler(ConsoleHandlerRoutine, TRUE);
 
-        freopen("CONOUT$", "w", stdout);
-        freopen("CONOUT$", "w", stderr);
-        freopen("CONIN$", "r", stdin);
-        DebugConsoleThreadHandle = PhCreateThread(0, PhpDebugConsoleThreadStart, NULL);
+        _wfreopen(L"CONOUT$", L"w", stdout);
+        _wfreopen(L"CONOUT$", L"w", stderr);
+        _wfreopen(L"CONIN$", L"r", stdin);
+
+        PhCreateThreadEx(&DebugConsoleThreadHandle, PhpDebugConsoleThreadStart, NULL);
     }
     else
     {
@@ -102,7 +103,7 @@ VOID PhShowDebugConsole(
         consoleWindow = GetConsoleWindow();
 
         // Console window already exists, so bring it to the top.
-        if (IsIconic(consoleWindow))
+        if (IsMinimized(consoleWindow))
             ShowWindow(consoleWindow, SW_RESTORE);
         else
             BringWindowToTop(consoleWindow);
@@ -115,9 +116,9 @@ VOID PhCloseDebugConsole(
     VOID
     )
 {
-    freopen("NUL", "w", stdout);
-    freopen("NUL", "w", stderr);
-    freopen("NUL", "r", stdin);
+    _wfreopen(L"NUL", L"w", stdout);
+    _wfreopen(L"NUL", L"w", stderr);
+    _wfreopen(L"NUL", L"r", stdin);
 
     FreeConsole();
 }
@@ -599,7 +600,7 @@ static VOID PhpTestRwLock(
     Context->ReleaseShared(Context->Parameter);
 
     // Null test
-
+    PhInitializeStopwatch(&stopwatch);
     PhStartStopwatch(&stopwatch);
 
     for (i = 0; i < 2000000; i++)
@@ -622,10 +623,11 @@ static VOID PhpTestRwLock(
 
     for (i = 0; i < RW_PROCESSORS; i++)
     {
-        threadHandles[i] = PhCreateThread(0, PhpRwLockTestThreadStart, Context);
+        PhCreateThreadEx(&threadHandles[i], PhpRwLockTestThreadStart, Context);
     }
 
     PhWaitForBarrier(&RwStartBarrier, FALSE);
+    PhInitializeStopwatch(&stopwatch);
     PhStartStopwatch(&stopwatch);
     NtWaitForMultipleObjects(RW_PROCESSORS, threadHandles, WaitAll, FALSE, NULL);
     PhStopStopwatch(&stopwatch);
@@ -650,13 +652,6 @@ VOID FASTCALL PhfReleaseCriticalSection(
     RtlLeaveCriticalSection(CriticalSection);
 }
 
-VOID FASTCALL PhfReleaseQueuedLockExclusiveUsingInline(
-    _In_ PPH_QUEUED_LOCK QueuedLock
-    )
-{
-    PhReleaseQueuedLockExclusive(QueuedLock);
-}
-
 NTSTATUS PhpDebugConsoleThreadStart(
     _In_ PVOID Parameter
     )
@@ -670,14 +665,11 @@ NTSTATUS PhpDebugConsoleThreadStart(
     PhLoadSymbolProviderOptions(DebugConsoleSymbolProvider);
 
     {
-        static UNICODE_STRING variableNameUs = RTL_CONSTANT_STRING(L"_NT_SYMBOL_PATH");
-        UNICODE_STRING variableValueUs;
+        static PH_STRINGREF variableNameSr = PH_STRINGREF_INIT(L"_NT_SYMBOL_PATH");
+        PPH_STRING variableValue;
         PPH_STRING newSearchPath;
-        WCHAR buffer[MAX_PATH];
 
-        RtlInitEmptyUnicodeString(&variableValueUs, buffer, sizeof(buffer));
-
-        if (NT_SUCCESS(RtlQueryEnvironmentVariable_U(NULL, &variableNameUs, &variableValueUs)))
+        if (NT_SUCCESS(PhQueryEnvironmentVariable(NULL, &variableNameSr, &variableValue)))
         {
             PPH_STRING currentDirectory = PhGetApplicationDirectory();
             PPH_STRING currentSearchPath = PhGetStringSetting(L"DbgHelpSearchPath");
@@ -686,7 +678,7 @@ NTSTATUS PhpDebugConsoleThreadStart(
             {
                 newSearchPath = PhFormatString(
                     L"%s;%s;%s",
-                    buffer,
+                    variableValue->Buffer,
                     PhGetStringOrEmpty(currentSearchPath),
                     PhGetStringOrEmpty(currentDirectory)
                     );
@@ -695,13 +687,14 @@ NTSTATUS PhpDebugConsoleThreadStart(
             {
                 newSearchPath = PhFormatString(
                     L"%s;%s",
-                    buffer,
+                    variableValue->Buffer,
                     PhGetStringOrEmpty(currentDirectory)
                     );
             }
 
             PhSetSearchPathSymbolProvider(DebugConsoleSymbolProvider, PhGetString(newSearchPath));
 
+            PhDereferenceObject(variableValue);
             PhDereferenceObject(newSearchPath);
             PhDereferenceObject(currentDirectory);
         }
@@ -742,7 +735,7 @@ NTSTATUS PhpDebugConsoleThreadStart(
         inputLength = (ULONG)PhCountStringZ(line);
 
         if (inputLength != 0)
-            line[inputLength - 1] = 0;
+            line[inputLength - 1] = UNICODE_NULL;
 
         context = NULL;
         command = wcstok_s(line, delims, &context);

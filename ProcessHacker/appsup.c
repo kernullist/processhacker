@@ -313,7 +313,7 @@ PH_KNOWN_PROCESS_TYPE PhGetProcessKnownTypeEx(
     BOOLEAN isWow64 = FALSE;
 #endif
 
-    if (ProcessId == SYSTEM_PROCESS_ID)
+    if (ProcessId == SYSTEM_PROCESS_ID || ProcessId == SYSTEM_IDLE_PROCESS_ID)
         return SystemProcessType;
 
     if (PhIsNullOrEmptyString(FileName))
@@ -321,7 +321,7 @@ PH_KNOWN_PROCESS_TYPE PhGetProcessKnownTypeEx(
 
     PhGetSystemRoot(&systemRootPrefix);
 
-    fileName = PhDuplicateString(FileName);
+    fileName = PhReferenceObject(FileName);
     name = fileName->sr;
 
     knownProcessType = UnknownProcessType;
@@ -418,7 +418,7 @@ static BOOLEAN NTAPI PhpSvchostCommandLineCallback(
 {
     PPH_KNOWN_PROCESS_COMMAND_LINE knownCommandLine = Context;
 
-    if (Option && Option->Id == 1)
+    if (knownCommandLine && Option && Option->Id == 1)
     {
         PhSwapReference(&knownCommandLine->ServiceHost.GroupName, Value);
     }
@@ -426,6 +426,7 @@ static BOOLEAN NTAPI PhpSvchostCommandLineCallback(
     return TRUE;
 }
 
+_Success_(return)
 BOOLEAN PhaGetProcessKnownCommandLine(
     _In_ PPH_STRING CommandLine,
     _In_ PH_KNOWN_PROCESS_TYPE KnownProcessType,
@@ -564,7 +565,7 @@ BOOLEAN PhaGetProcessKnownCommandLine(
 
             // Find "/processid:"; the GUID is just after that.
 
-            _wcsupr(argPart->Buffer);
+            PhUpperString(argPart);
             indexOfProcessId = PhFindStringInString(argPart, 0, L"/PROCESSID:");
 
             if (indexOfProcessId == -1)
@@ -941,7 +942,7 @@ VOID PhCopyListViewInfoTip(
         Tip->Buffer,
         copyLength * 2
         );
-    GetInfoTip->pszText[copyIndex + copyLength] = 0;
+    GetInfoTip->pszText[copyIndex + copyLength] = UNICODE_NULL;
 }
 
 VOID PhCopyListView(
@@ -1315,8 +1316,7 @@ BOOLEAN PhCreateProcessIgnoreIfeoDebugger(
 {
     BOOLEAN result;
     BOOLEAN originalValue;
-    STARTUPINFO startupInfo;
-    PROCESS_INFORMATION processInfo;
+    HANDLE processHandle;
 
     result = FALSE;
 
@@ -1325,47 +1325,45 @@ BOOLEAN PhCreateProcessIgnoreIfeoDebugger(
     NtCurrentPeb()->ReadImageFileExecOptions = FALSE;
     RtlLeaveCriticalSection(NtCurrentPeb()->FastPebLock);
 
-    memset(&startupInfo, 0, sizeof(STARTUPINFO));
-    startupInfo.cb = sizeof(STARTUPINFO);
-    memset(&processInfo, 0, sizeof(PROCESS_INFORMATION));
-
     // The combination of ReadImageFileExecOptions = FALSE and the DEBUG_PROCESS flag
-    // allows us to skip the Debugger IFEO value.
-    if (CreateProcess(FileName, NULL, NULL, NULL, FALSE, DEBUG_PROCESS | DEBUG_ONLY_THIS_PROCESS, NULL, NULL, &startupInfo, &processInfo))
+    // allows us to skip the Debugger IFEO value. (wj32)
+
+    if (NT_SUCCESS(PhCreateProcessWin32(
+        FileName,
+        NULL,
+        NULL,
+        NULL,
+        PH_CREATE_PROCESS_DEBUG | PH_CREATE_PROCESS_DEBUG_ONLY_THIS_PROCESS,
+        NULL,
+        &processHandle,
+        NULL
+        )))
     {
         HANDLE debugObjectHandle;
 
         if (NT_SUCCESS(PhGetProcessDebugObject(
-            processInfo.hProcess,
+            processHandle,
             &debugObjectHandle
             )))
         {
-            ULONG killProcessOnExit;
-
             // Disable kill-on-close.
-            killProcessOnExit = 0;
-            NtSetInformationDebugObject(
+            if (NT_SUCCESS(PhSetDebugKillProcessOnExit(
                 debugObjectHandle,
-                DebugObjectKillProcessOnExitInformation,
-                &killProcessOnExit,
-                sizeof(ULONG),
-                NULL
-                );
-
-            // Stop debugging the process now.
-            NtRemoveProcessDebug(processInfo.hProcess, debugObjectHandle);
+                FALSE
+                )))
+            {
+                // Stop debugging the process now.
+                NtRemoveProcessDebug(processHandle, debugObjectHandle);
+            }
 
             NtClose(debugObjectHandle);
         }
 
         result = TRUE;
+
+        NtClose(processHandle);
     }
 
-    if (processInfo.hProcess)
-        NtClose(processInfo.hProcess);
-    if (processInfo.hThread)
-        NtClose(processInfo.hThread);
-    
     if (originalValue)
     {
         RtlEnterCriticalSection(NtCurrentPeb()->FastPebLock);
@@ -1419,18 +1417,18 @@ VOID PhInitializeTreeNewColumnMenuEx(
             resetSortMenuItem = PhCreateEMenuItem(0, PH_TN_COLUMN_MENU_RESET_SORT_ID, L"Reset sort", NULL, NULL);
     }
 
-    PhInsertEMenuItem(Data->Menu, sizeColumnToFitMenuItem, -1);
-    PhInsertEMenuItem(Data->Menu, sizeAllColumnsToFitMenuItem, -1);
+    PhInsertEMenuItem(Data->Menu, sizeColumnToFitMenuItem, ULONG_MAX);
+    PhInsertEMenuItem(Data->Menu, sizeAllColumnsToFitMenuItem, ULONG_MAX);
 
     if (!(Flags & PH_TN_COLUMN_MENU_NO_VISIBILITY))
     {
-        PhInsertEMenuItem(Data->Menu, hideColumnMenuItem, -1);
+        PhInsertEMenuItem(Data->Menu, hideColumnMenuItem, ULONG_MAX);
 
         if (resetSortMenuItem)
-            PhInsertEMenuItem(Data->Menu, resetSortMenuItem, -1);
+            PhInsertEMenuItem(Data->Menu, resetSortMenuItem, ULONG_MAX);
 
-        PhInsertEMenuItem(Data->Menu, PhCreateEMenuSeparator(), -1);
-        PhInsertEMenuItem(Data->Menu, chooseColumnsMenuItem, -1);
+        PhInsertEMenuItem(Data->Menu, PhCreateEMenuSeparator(), ULONG_MAX);
+        PhInsertEMenuItem(Data->Menu, chooseColumnsMenuItem, ULONG_MAX);
 
         if (TreeNew_GetFixedColumn(Data->TreeNewHandle))
             minimumNumberOfColumns = 2; // don't allow user to remove all normal columns (the fixed column can never be removed)
@@ -1448,7 +1446,7 @@ VOID PhInitializeTreeNewColumnMenuEx(
     else
     {
         if (resetSortMenuItem)
-            PhInsertEMenuItem(Data->Menu, resetSortMenuItem, -1);
+            PhInsertEMenuItem(Data->Menu, resetSortMenuItem, ULONG_MAX);
     }
 
     if (!Data->MouseEvent || !Data->MouseEvent->Column)
@@ -1649,7 +1647,7 @@ VOID PhRemoveTreeNewFilter(
 
     index = PhFindItemList(Support->FilterList, Entry);
 
-    if (index != -1)
+    if (index != ULONG_MAX)
     {
         PhRemoveItemList(Support->FilterList, index);
         PhFree(Entry);
@@ -1839,7 +1837,7 @@ BOOLEAN PhInsertCopyListViewEMenuItem(
     POINT location;
     LVHITTESTINFO lvHitInfo;
     HDITEM headerItem;
-    WCHAR headerText[MAX_PATH];
+    WCHAR headerText[MAX_PATH] = L"";
 
     if (!GetCursorPos(&location))
         return FALSE;
@@ -1943,7 +1941,7 @@ BOOLEAN PhpSelectFavoriteInRegedit(
     HMENU favoritesMenu;
     ULONG count;
     ULONG i;
-    ULONG id = -1;
+    ULONG id = ULONG_MAX;
 
     if (!(menu = GetMenu(RegeditWindow)))
         return FALSE;
@@ -1969,11 +1967,11 @@ BOOLEAN PhpSelectFavoriteInRegedit(
     for (i = 3; i < count; i++)
     {
         MENUITEMINFO info = { sizeof(MENUITEMINFO) };
-        WCHAR buffer[32];
+        WCHAR buffer[MAX_PATH];
 
         info.fMask = MIIM_ID | MIIM_STRING;
         info.dwTypeData = buffer;
-        info.cch = sizeof(buffer) / sizeof(WCHAR);
+        info.cch = RTL_NUMBER_OF(buffer);
         GetMenuItemInfo(favoritesMenu, i, TRUE, &info);
 
         if (info.cch == FavoriteName->Length / sizeof(WCHAR))
@@ -1991,7 +1989,7 @@ BOOLEAN PhpSelectFavoriteInRegedit(
         }
     }
 
-    if (id == -1)
+    if (id == ULONG_MAX)
         return FALSE;
 
     // Activate our entry.
@@ -2007,7 +2005,7 @@ BOOLEAN PhpSelectFavoriteInRegedit(
         PostMessage(RegeditWindow, WM_MENUSELECT, MAKEWPARAM(0, 0xffff), 0);
 
     // Bring regedit to the top.
-    if (IsIconic(RegeditWindow))
+    if (IsMinimized(RegeditWindow))
     {
         ShowWindow(RegeditWindow, SW_RESTORE);
         SetForegroundWindow(RegeditWindow);
@@ -2074,8 +2072,8 @@ BOOLEAN PhShellOpenKey2(
     RtlInitUnicodeString(&valueName, favoriteName);
     PhUnicodeStringToStringRef(&valueName, &valueNameSr);
 
-    expandedKeyName = PhExpandKeyName(KeyName, TRUE);
-    NtSetValueKey(favoritesKeyHandle, &valueName, 0, REG_SZ, expandedKeyName->Buffer, (ULONG)expandedKeyName->Length + 2);
+    expandedKeyName = PhExpandKeyName(KeyName, FALSE);
+    NtSetValueKey(favoritesKeyHandle, &valueName, 0, REG_SZ, expandedKeyName->Buffer, (ULONG)expandedKeyName->Length + sizeof(UNICODE_NULL));
     PhDereferenceObject(expandedKeyName);
 
     // Select our entry in regedit.

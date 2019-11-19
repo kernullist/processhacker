@@ -3,7 +3,7 @@
  *   options window
  *
  * Copyright (C) 2010-2016 wj32
- * Copyright (C) 2017-2018 dmex
+ * Copyright (C) 2017-2019 dmex
  *
  * This file is part of Process Hacker.
  *
@@ -105,7 +105,7 @@ PPH_OPTIONS_SECTION PhOptionsCreateSection(
     _In_ PVOID Instance,
     _In_ PWSTR Template,
     _In_ DLGPROC DialogProc,
-    _In_ PVOID Parameter
+    _In_opt_ PVOID Parameter
     );
 
 PPH_OPTIONS_SECTION PhOptionsCreateSectionAdvanced(
@@ -113,7 +113,7 @@ PPH_OPTIONS_SECTION PhOptionsCreateSectionAdvanced(
     _In_ PVOID Instance,
     _In_ PWSTR Template,
     _In_ DLGPROC DialogProc,
-    _In_ PVOID Parameter
+    _In_opt_ PVOID Parameter
     );
 
 BOOLEAN PhpIsDefaultTaskManager(
@@ -174,7 +174,7 @@ VOID PhShowOptionsDialog(
             ShowWindow(PhOptionsWindowHandle, SW_SHOW);
         }
 
-        if (IsIconic(PhOptionsWindowHandle))
+        if (IsMinimized(PhOptionsWindowHandle))
             ShowWindow(PhOptionsWindowHandle, SW_RESTORE);
         else
             SetForegroundWindow(PhOptionsWindowHandle);
@@ -291,6 +291,8 @@ INT_PTR CALLBACK PhOptionsDialogProc(
             //PhAddLayoutItem(&WindowLayoutManager, GetDlgItem(hwndDlg, IDC_APPLY), NULL, PH_ANCHOR_RIGHT | PH_ANCHOR_BOTTOM);
             PhAddLayoutItem(&WindowLayoutManager, GetDlgItem(hwndDlg, IDOK), NULL, PH_ANCHOR_RIGHT | PH_ANCHOR_BOTTOM);
 
+            PhRegisterWindowCallback(hwndDlg, PH_PLUGIN_WINDOW_EVENT_TYPE_TOPMOST, NULL);
+
             if (PhEnableThemeSupport) // TODO: fix options dialog theme (dmex)
                 PhInitializeWindowTheme(hwndDlg, TRUE);
 
@@ -346,6 +348,8 @@ INT_PTR CALLBACK PhOptionsDialogProc(
             SectionList = NULL;
 
             if (OptionsTreeImageList) ImageList_Destroy(OptionsTreeImageList);
+
+            PhUnregisterWindowCallback(hwndDlg);
 
             PhUnregisterDialog(PhOptionsWindowHandle);
             PhOptionsWindowHandle = NULL;
@@ -438,7 +442,7 @@ INT_PTR CALLBACK PhOptionsDialogProc(
                     case 1: // Old colors
                         {
                             SetDCBrushColor(drawInfo->hDC, RGB(0, 0, 0));
-                            FillRect(drawInfo->hDC, &rect, GetStockObject(DC_BRUSH));
+                            FillRect(drawInfo->hDC, &rect, GetStockBrush(DC_BRUSH));
                         }
                         break;
                     }
@@ -519,7 +523,7 @@ PPH_OPTIONS_SECTION PhOptionsCreateSection(
     _In_ PVOID Instance,
     _In_ PWSTR Template,
     _In_ DLGPROC DialogProc,
-    _In_ PVOID Parameter
+    _In_opt_ PVOID Parameter
     )
 {
     PPH_OPTIONS_SECTION section;
@@ -542,7 +546,7 @@ PPH_OPTIONS_SECTION PhOptionsCreateSectionAdvanced(
     _In_ PVOID Instance,
     _In_ PWSTR Template,
     _In_ DLGPROC DialogProc,
-    _In_ PVOID Parameter
+    _In_opt_ PVOID Parameter
     )
 {
     PPH_OPTIONS_SECTION section;
@@ -827,30 +831,30 @@ static BOOLEAN PathMatchesPh(
     BOOLEAN match = FALSE;
     PPH_STRING fileName;
 
-    if (fileName = PhGetApplicationFileName())
+    if (!(fileName = PhGetApplicationFileName()))
+        return FALSE;
+
+    if (PhEqualString(OldTaskMgrDebugger, fileName, TRUE))
     {
-        if (PhEqualString(OldTaskMgrDebugger, fileName, TRUE))
-        {
-            match = TRUE;
-        }
-        // Allow for a quoted value.
-        else if (
-            OldTaskMgrDebugger->Length == fileName->Length + sizeof(WCHAR) * sizeof(WCHAR) &&
-            OldTaskMgrDebugger->Buffer[0] == '"' &&
-            OldTaskMgrDebugger->Buffer[OldTaskMgrDebugger->Length / sizeof(WCHAR) - 1] == '"'
-            )
-        {
-            PH_STRINGREF partInside;
-
-            partInside.Buffer = &OldTaskMgrDebugger->Buffer[1];
-            partInside.Length = OldTaskMgrDebugger->Length - sizeof(WCHAR) * sizeof(WCHAR);
-
-            if (PhEqualStringRef(&partInside, &fileName->sr, TRUE))
-                match = TRUE;
-        }
-
-        PhDereferenceObject(fileName);
+        match = TRUE;
     }
+    // Allow for a quoted value.
+    else if (
+        OldTaskMgrDebugger->Length == fileName->Length + 4 &&
+        OldTaskMgrDebugger->Buffer[0] == L'"' &&
+        OldTaskMgrDebugger->Buffer[OldTaskMgrDebugger->Length / sizeof(WCHAR) - 1] == L'"'
+        )
+    {
+        PH_STRINGREF partInside;
+
+        partInside.Buffer = &OldTaskMgrDebugger->Buffer[1];
+        partInside.Length = OldTaskMgrDebugger->Length - sizeof(WCHAR) * sizeof(WCHAR);
+
+        if (PhEqualStringRef(&partInside, &fileName->sr, TRUE))
+            match = TRUE;
+    }
+
+    PhDereferenceObject(fileName);
 
     return match;
 }
@@ -939,7 +943,7 @@ VOID PhpSetDefaultTaskManager(
                         0, 
                         REG_SZ, 
                         quotedFileName->Buffer, 
-                        (ULONG)quotedFileName->Length + sizeof(WCHAR)
+                        (ULONG)quotedFileName->Length + sizeof(UNICODE_NULL)
                         );
 
                     PhDereferenceObject(applicationFileName);
@@ -992,7 +996,9 @@ typedef enum _PHP_OPTIONS_INDEX
     PHP_OPTIONS_INDEX_ENABLE_UNDECORATE_SYMBOLS,
     PHP_OPTIONS_INDEX_ENABLE_CYCLE_CPU_USAGE,
     PHP_OPTIONS_INDEX_ENABLE_THEME_SUPPORT,
+    //PHP_OPTIONS_INDEX_ENABLE_LINUX_SUPPORT,
     PHP_OPTIONS_INDEX_ENABLE_NETWORK_RESOLVE,
+    PHP_OPTIONS_INDEX_ENABLE_NETWORK_RESOLVE_DOH,
     PHP_OPTIONS_INDEX_ENABLE_INSTANT_TOOLTIPS,
     PHP_OPTIONS_INDEX_ENABLE_STAGE2,
     PHP_OPTIONS_INDEX_ENABLE_SERVICE_STAGE2,
@@ -1029,7 +1035,9 @@ static VOID PhpAdvancedPageLoad(
     PhAddListViewItem(listViewHandle, PHP_OPTIONS_INDEX_ENABLE_UNDECORATE_SYMBOLS, L"Enable undecorated symbols", NULL);
     PhAddListViewItem(listViewHandle, PHP_OPTIONS_INDEX_ENABLE_CYCLE_CPU_USAGE, L"Enable cycle-based CPU usage", NULL);
     PhAddListViewItem(listViewHandle, PHP_OPTIONS_INDEX_ENABLE_THEME_SUPPORT, L"Enable theme support (experimental)", NULL);
+    //PhAddListViewItem(listViewHandle, PHP_OPTIONS_INDEX_ENABLE_LINUX_SUPPORT, L"Enable Windows subsystem for Linux support", NULL);
     PhAddListViewItem(listViewHandle, PHP_OPTIONS_INDEX_ENABLE_NETWORK_RESOLVE, L"Resolve network addresses", NULL);
+    PhAddListViewItem(listViewHandle, PHP_OPTIONS_INDEX_ENABLE_NETWORK_RESOLVE_DOH, L"Resolve DNS over HTTPS (DoH)", NULL);
     PhAddListViewItem(listViewHandle, PHP_OPTIONS_INDEX_ENABLE_INSTANT_TOOLTIPS, L"Show tooltips instantly", NULL);  
     PhAddListViewItem(listViewHandle, PHP_OPTIONS_INDEX_ENABLE_STAGE2, L"Check images for digital signatures", NULL);
     PhAddListViewItem(listViewHandle, PHP_OPTIONS_INDEX_ENABLE_SERVICE_STAGE2, L"Check services for digital signatures", NULL);
@@ -1050,7 +1058,9 @@ static VOID PhpAdvancedPageLoad(
     SetLvItemCheckForSetting(listViewHandle, PHP_OPTIONS_INDEX_ENABLE_UNDECORATE_SYMBOLS, L"DbgHelpUndecorate");
     SetLvItemCheckForSetting(listViewHandle, PHP_OPTIONS_INDEX_ENABLE_CYCLE_CPU_USAGE, L"EnableCycleCpuUsage");
     SetLvItemCheckForSetting(listViewHandle, PHP_OPTIONS_INDEX_ENABLE_THEME_SUPPORT, L"EnableThemeSupport");
+    //SetLvItemCheckForSetting(listViewHandle, PHP_OPTIONS_INDEX_ENABLE_LINUX_SUPPORT, L"EnableLinuxSubsystemSupport");
     SetLvItemCheckForSetting(listViewHandle, PHP_OPTIONS_INDEX_ENABLE_NETWORK_RESOLVE, L"EnableNetworkResolve");
+    SetLvItemCheckForSetting(listViewHandle, PHP_OPTIONS_INDEX_ENABLE_NETWORK_RESOLVE_DOH, L"EnableNetworkResolveDoH");
     SetLvItemCheckForSetting(listViewHandle, PHP_OPTIONS_INDEX_ENABLE_INSTANT_TOOLTIPS, L"EnableInstantTooltips");
     SetLvItemCheckForSetting(listViewHandle, PHP_OPTIONS_INDEX_ENABLE_STAGE2, L"EnableStage2");
     SetLvItemCheckForSetting(listViewHandle, PHP_OPTIONS_INDEX_ENABLE_SERVICE_STAGE2, L"EnableServiceStage2");
@@ -1078,7 +1088,7 @@ static VOID PhpOptionsNotifyChangeCallback(
     if (RestartRequired)
     {
         if (PhShowMessage2(
-            (IsWindowVisible(PhMainWndHandle) && !IsMinimized(PhMainWndHandle)) ? PhMainWndHandle : NULL,
+            PhMainWndHandle,
             TDCBF_YES_BUTTON | TDCBF_NO_BUTTON,
             TD_INFORMATION_ICON,
             L"One or more options you have changed requires a restart of Process Hacker.",
@@ -1141,7 +1151,9 @@ static VOID PhpAdvancedPageSave(
     SetSettingForLvItemCheck(listViewHandle, PHP_OPTIONS_INDEX_ENABLE_UNDECORATE_SYMBOLS, L"DbgHelpUndecorate");
     SetSettingForLvItemCheckRestartRequired(listViewHandle, PHP_OPTIONS_INDEX_ENABLE_CYCLE_CPU_USAGE, L"EnableCycleCpuUsage");
     SetSettingForLvItemCheckRestartRequired(listViewHandle, PHP_OPTIONS_INDEX_ENABLE_THEME_SUPPORT, L"EnableThemeSupport");
+    //SetSettingForLvItemCheckRestartRequired(listViewHandle, PHP_OPTIONS_INDEX_ENABLE_LINUX_SUPPORT, L"EnableLinuxSubsystemSupport");
     SetSettingForLvItemCheckRestartRequired(listViewHandle, PHP_OPTIONS_INDEX_ENABLE_NETWORK_RESOLVE, L"EnableNetworkResolve");
+    SetSettingForLvItemCheckRestartRequired(listViewHandle, PHP_OPTIONS_INDEX_ENABLE_NETWORK_RESOLVE_DOH, L"EnableNetworkResolveDoH");
     SetSettingForLvItemCheck(listViewHandle, PHP_OPTIONS_INDEX_ENABLE_INSTANT_TOOLTIPS, L"EnableInstantTooltips");
     SetSettingForLvItemCheckRestartRequired(listViewHandle, PHP_OPTIONS_INDEX_ENABLE_STAGE2, L"EnableStage2");
     SetSettingForLvItemCheckRestartRequired(listViewHandle, PHP_OPTIONS_INDEX_ENABLE_SERVICE_STAGE2, L"EnableServiceStage2");
@@ -1149,6 +1161,11 @@ static VOID PhpAdvancedPageSave(
     SetSettingForLvItemCheck(listViewHandle, PHP_OPTIONS_INDEX_ICON_SINGLE_CLICK, L"IconSingleClick");
     SetSettingForLvItemCheck(listViewHandle, PHP_OPTIONS_INDEX_ICON_TOGGLE_VISIBILITY, L"IconTogglesVisibility");
     SetSettingForLvItemCheck(listViewHandle, PHP_OPTIONS_INDEX_PROPAGATE_CPU_USAGE, L"PropagateCpuUsage");
+
+    if (PhGetIntegerSetting(L"EnableThemeSupport"))
+    {
+        PhSetIntegerSetting(L"GraphColorMode", 1); // HACK switch to dark theme. (dmex)
+    }
 
     WriteCurrentUserRun(
         ListView_GetCheckState(listViewHandle, PHP_OPTIONS_INDEX_START_ATLOGON) == BST_CHECKED,
@@ -1260,9 +1277,9 @@ INT_PTR CALLBACK PhpOptionsGeneralDlgProc(
 
                 if (CurrentFontInstance)
                 {
-                    SendMessage(OptionsTreeControl, WM_SETFONT, (WPARAM)CurrentFontInstance, TRUE); // HACK
-                    SendMessage(listviewHandle, WM_SETFONT, (WPARAM)CurrentFontInstance, TRUE);
-                    SendMessage(GetDlgItem(hwndDlg, IDC_FONT), WM_SETFONT, (WPARAM)CurrentFontInstance, TRUE);
+                    SetWindowFont(OptionsTreeControl, CurrentFontInstance, TRUE); // HACK
+                    SetWindowFont(listviewHandle, CurrentFontInstance, TRUE);
+                    SetWindowFont(GetDlgItem(hwndDlg, IDC_FONT), CurrentFontInstance, TRUE);
                 }
             }
 
@@ -1283,7 +1300,7 @@ INT_PTR CALLBACK PhpOptionsGeneralDlgProc(
             PhpAdvancedPageSave(hwndDlg);
 
             if (CurrentFontInstance)
-                DeleteObject(CurrentFontInstance);
+                DeleteFont(CurrentFontInstance);
 
             if (GeneralListviewImageList)
                 ImageList_Destroy(GeneralListviewImageList);
@@ -1325,13 +1342,13 @@ INT_PTR CALLBACK PhpOptionsGeneralDlgProc(
                         // Update the button's font.
 
                         if (CurrentFontInstance)
-                            DeleteObject(CurrentFontInstance);
+                            DeleteFont(CurrentFontInstance);
 
                         CurrentFontInstance = CreateFontIndirect(&font);
 
-                        SendMessage(OptionsTreeControl, WM_SETFONT, (WPARAM)CurrentFontInstance, TRUE); // HACK
-                        SendMessage(GetDlgItem(hwndDlg, IDC_SETTINGS), WM_SETFONT, (WPARAM)CurrentFontInstance, TRUE);
-                        SendMessage(GetDlgItem(hwndDlg, IDC_FONT), WM_SETFONT, (WPARAM)CurrentFontInstance, TRUE);
+                        SetWindowFont(OptionsTreeControl, CurrentFontInstance, TRUE); // HACK
+                        SetWindowFont(GetDlgItem(hwndDlg, IDC_SETTINGS), CurrentFontInstance, TRUE);
+                        SetWindowFont(GetDlgItem(hwndDlg, IDC_FONT), CurrentFontInstance, TRUE);
                         RestartRequired = TRUE; // HACK: Fix ToolStatus plugin toolbar resize on font change
                     }
                 }
@@ -1477,13 +1494,13 @@ INT_PTR CALLBACK PhpOptionsGeneralDlgProc(
     //        if (GetDlgCtrlID(control) == IDC_DEFSTATE)
     //        {
     //            if (!BoldFont)
-    //                BoldFont = PhDuplicateFontWithNewWeight((HFONT)SendMessage(control, WM_GETFONT, 0, 0), FW_BOLD);
+    //                BoldFont = PhDuplicateFontWithNewWeight(GetWindowFont(control), FW_BOLD);
     //
     //            SetBkMode(hdc, TRANSPARENT);
     //
     //            if (!PhpIsDefaultTaskManager())
     //            {
-    //                SelectObject(hdc, BoldFont);
+    //                SelectFont(hdc, BoldFont);
     //            }
     //        }
     //    }

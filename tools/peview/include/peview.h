@@ -64,6 +64,12 @@ VOID PvPeProperties(
     VOID
     );
 
+NTSTATUS PhpOpenFileSecurity(
+    _Out_ PHANDLE Handle,
+    _In_ ACCESS_MASK DesiredAccess,
+    _In_opt_ PVOID Context
+    );
+
 // libprp
 
 VOID PvLibProperties(
@@ -257,8 +263,6 @@ typedef struct _PDB_SYMBOL_CONTEXT
     HWND SearchHandle;
     HWND TreeNewHandle;
     HWND ParentWindowHandle;
-
-    HANDLE TimerQueueHandle;
     HANDLE UpdateTimerHandle;
 
     ULONG64 BaseAddress;
@@ -382,6 +386,13 @@ INT_PTR CALLBACK PvpPeProcessesDlgProc(
     _In_ LPARAM lParam
     );
 
+INT_PTR CALLBACK PvpPeTlsDlgProc(
+    _In_ HWND hwndDlg,
+    _In_ UINT uMsg,
+    _In_ WPARAM wParam,
+    _In_ LPARAM lParam
+    );
+
 // ELF
 
 PWSTR PvpGetSymbolTypeName(
@@ -394,6 +405,10 @@ PWSTR PvpGetSymbolBindingName(
 
 PWSTR PvpGetSymbolVisibility(
     _In_ UCHAR OtherInfo
+    );
+
+PPH_STRING PvpGetSymbolSectionName(
+    _In_ ULONG Index
     );
 
 INT_PTR CALLBACK PvpExlfGeneralDlgProc(

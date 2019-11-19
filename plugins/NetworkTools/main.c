@@ -836,7 +836,7 @@ VOID ProcessesUpdatedCallback(
                 sizeof(TCP_ESTATS_PATH_ROD_v0)
                 ) == ERROR_SUCCESS)
             {
-                extension->NumberOfLostPackets = pathRod.FastRetran + pathRod.PktsRetrans;
+                extension->NumberOfLostPackets = UInt32Add32To64(pathRod.FastRetran, pathRod.PktsRetrans);
                 extension->SampleRtt = pathRod.SampleRtt;
 
                 if (extension->SampleRtt == ULONG_MAX) // HACK
@@ -883,7 +883,7 @@ VOID ProcessesUpdatedCallback(
                 sizeof(TCP_ESTATS_PATH_ROD_v0)
                 ) == ERROR_SUCCESS)
             {
-                extension->NumberOfLostPackets = pathRod.FastRetran + pathRod.PktsRetrans;
+                extension->NumberOfLostPackets = UInt32Add32To64(pathRod.FastRetran, pathRod.PktsRetrans);
                 extension->SampleRtt = pathRod.SampleRtt;
 
                 if (extension->SampleRtt == ULONG_MAX) // HACK
@@ -915,7 +915,7 @@ LOGICAL DllMain(
                 { ScalableIntegerPairSettingType, SETTING_NAME_TRACERT_WINDOW_SIZE, L"@96|850,490" },
                 { StringSettingType, SETTING_NAME_TRACERT_TREE_LIST_COLUMNS, L"" },
                 { IntegerPairSettingType, SETTING_NAME_TRACERT_TREE_LIST_SORT, L"0,1" },
-                { IntegerSettingType, SETTING_NAME_TRACERT_MAX_HOPS, L"30" },
+                { IntegerSettingType, SETTING_NAME_TRACERT_MAX_HOPS, L"14" },
                 { IntegerPairSettingType, SETTING_NAME_WHOIS_WINDOW_POSITION, L"0,0" },
                 { ScalableIntegerPairSettingType, SETTING_NAME_WHOIS_WINDOW_SIZE, L"@96|600,365" },
                 { StringSettingType, SETTING_NAME_DB_LOCATION, L"%APPDATA%\\Process Hacker\\GeoLite2-Country.mmdb" },

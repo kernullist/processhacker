@@ -33,8 +33,9 @@ BOOLEAN NTAPI PhpWslDistributionNamesCallback(
     return TRUE;
 }
 
-PPH_STRING PhGetWslDistributionFromPath(
+BOOLEAN PhGetWslDistributionFromPath(
     _In_ PPH_STRING FileName,
+    _Out_opt_ PPH_STRING *LxssDistroName,
     _Out_opt_ PPH_STRING *LxssDistroPath,
     _Out_opt_ PPH_STRING *LxssFileName
     )
@@ -57,7 +58,7 @@ PPH_STRING PhGetWslDistributionFromPath(
         PPH_LIST distributionGuidList;
 
         distributionGuidList = PhCreateList(1);
-        PhEnumerateKey(keyHandle, PhpWslDistributionNamesCallback, distributionGuidList);
+        PhEnumerateKey(keyHandle, KeyBasicInformation, PhpWslDistributionNamesCallback, distributionGuidList);
 
         for (i = 0; i < distributionGuidList->Count; i++)
         {
@@ -79,7 +80,7 @@ PPH_STRING PhGetWslDistributionFromPath(
                 if (PhStartsWithString(FileName, lxssBasePathName, TRUE))
                 {
                     lxssDistributionName = PhQueryRegistryString(subKeyHandle, L"DistributionName");
-                    
+
                     if (LxssDistroPath)
                     {
                         PhSetReference(&lxssDistroPath, lxssBasePathName);
@@ -126,7 +127,16 @@ PPH_STRING PhGetWslDistributionFromPath(
         *LxssFileName = lxssFileName;
     }
 
-    return lxssDistributionName;
+    if (LxssDistroName)
+    {
+        if (lxssDistributionName)
+        {
+            *LxssDistroName = lxssDistributionName;
+            return TRUE;
+        }
+    }
+
+    return FALSE;
 }
 
 BOOLEAN PhInitializeLxssImageVersionInfo(
@@ -140,28 +150,29 @@ BOOLEAN PhInitializeLxssImageVersionInfo(
     PPH_STRING lxssDistroName;
     PPH_STRING lxssDistroPath;
     PPH_STRING lxssFileName;
-    PPH_STRING lxssBaseFileName;
     PPH_STRING result;
 
-    lxssBaseFileName = PhGetBaseName(FileName);
-    lxssDistroName = PhGetWslDistributionFromPath(
+    if (!PhGetWslDistributionFromPath(
         FileName,
+        &lxssDistroName,
         &lxssDistroPath,
         &lxssFileName
-        );
+        ))
+    {
+        return FALSE;
+    }
 
-    if (!(lxssDistroName && lxssFileName && lxssBaseFileName))
+    if (PhIsNullOrEmptyString(lxssDistroName) || PhIsNullOrEmptyString(lxssDistroPath) || PhIsNullOrEmptyString(lxssFileName))
     {
         if (lxssDistroName) PhDereferenceObject(lxssDistroName);
         if (lxssDistroPath) PhDereferenceObject(lxssDistroPath);
         if (lxssFileName) PhDereferenceObject(lxssFileName);
-        if (lxssBaseFileName) PhDereferenceObject(lxssBaseFileName);
         return FALSE;
     }
 
     if (PhEqualString2(lxssFileName, L"/init", FALSE))
     {
-        PhMoveReference(&lxssFileName, PhCreateString(L"/sbin/init"));
+        PhMoveReference(&lxssFileName, PhCreateString(L"init"));
     }
 
     PhMoveReference(&lxssCommandLine, PhFormatString(
@@ -173,8 +184,7 @@ BOOLEAN PhInitializeLxssImageVersionInfo(
         lxssDistroName->Buffer,
         lxssCommandLine->Buffer,
         NULL,
-        &result,
-        NULL
+        &result
         );
 
     if (status == 0)
@@ -182,8 +192,8 @@ BOOLEAN PhInitializeLxssImageVersionInfo(
         goto ParseResult;
     }
 
-    PhMoveReference(&lxssCommandLine, PhFormatString(
-        L"dpkg -S %s",
+    PhMoveReference(&lxssCommandLine, PhConcatStrings2(
+        L"dpkg -S ",
         lxssFileName->Buffer
         ));
 
@@ -191,16 +201,15 @@ BOOLEAN PhInitializeLxssImageVersionInfo(
         lxssDistroName->Buffer,
         lxssCommandLine->Buffer,
         NULL,
-        &result,
-        NULL
+        &result
         );
 
     if (status != 0)
     {
         PhDereferenceObject(lxssCommandLine);
         PhDereferenceObject(lxssDistroName);
+        PhDereferenceObject(lxssDistroPath);
         PhDereferenceObject(lxssFileName);
-        PhDereferenceObject(lxssBaseFileName);
         return FALSE;
     }
     else
@@ -216,25 +225,33 @@ BOOLEAN PhInitializeLxssImageVersionInfo(
         PhDereferenceObject(result);
     }
 
-    PhMoveReference(&lxssCommandLine, PhFormatString(
-        L"dpkg-query -W -f=${Version}|${Maintainer}|${binary:Summary} %s",
-        lxssPackageName ? lxssPackageName->Buffer : lxssBaseFileName->Buffer
+    if (PhIsNullOrEmptyString(lxssPackageName))
+    {
+        PhDereferenceObject(lxssCommandLine);
+        PhDereferenceObject(lxssDistroName);
+        PhDereferenceObject(lxssDistroPath);
+        PhDereferenceObject(lxssFileName);
+        return FALSE;
+    }
+
+    PhMoveReference(&lxssCommandLine, PhConcatStrings2(
+        L"dpkg-query -W -f=${Version}|${Maintainer}|${binary:Summary} ",
+        lxssPackageName->Buffer
         ));
 
     status = PhCreateProcessLxss(
         lxssDistroName->Buffer,
         lxssCommandLine->Buffer,
         NULL,
-        &result,
-        NULL
+        &result
         );
 
     if (status != 0)
     {
         PhDereferenceObject(lxssCommandLine);
         PhDereferenceObject(lxssDistroName);
+        PhDereferenceObject(lxssDistroPath);
         PhDereferenceObject(lxssFileName);
-        PhDereferenceObject(lxssBaseFileName);
         return FALSE;
     }
 
@@ -250,7 +267,7 @@ ParseResult:
         PH_STRINGREF descriptionPart;
         PH_STRINGREF versionPart;
 
-        remainingPart = result->sr;
+        remainingPart = PhGetStringRef(result);
         PhSplitStringRefAtChar(&remainingPart, '|', &versionPart, &remainingPart);
         PhSplitStringRefAtChar(&remainingPart, '|', &companyPart, &remainingPart);
         PhSplitStringRefAtChar(&remainingPart, '|', &descriptionPart, &remainingPart);
@@ -267,8 +284,8 @@ ParseResult:
     if (lxssCommandLine) PhDereferenceObject(lxssCommandLine);
     if (lxssPackageName) PhDereferenceObject(lxssPackageName);
     if (lxssDistroName) PhDereferenceObject(lxssDistroName);
+    if (lxssDistroPath) PhDereferenceObject(lxssDistroPath);
     if (lxssFileName) PhDereferenceObject(lxssFileName);
-    if (lxssBaseFileName) PhDereferenceObject(lxssBaseFileName);
 
     return TRUE;
 }
@@ -277,8 +294,7 @@ ULONG PhCreateProcessLxss(
     _In_ PWSTR LxssDistribution,
     _In_ PWSTR LxssCommandLine,
     _In_opt_ PWSTR LxssCurrentDirectory,
-    _Out_ PPH_STRING *Result,
-    _Out_opt_ PHANDLE ProcessHandle
+    _Out_ PPH_STRING *Result
     )
 {
     NTSTATUS status;

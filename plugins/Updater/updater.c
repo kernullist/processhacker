@@ -2,7 +2,7 @@
  * Process Hacker Plugins -
  *   Update Checker Plugin
  *
- * Copyright (C) 2011-2017 dmex
+ * Copyright (C) 2011-2019 dmex
  *
  * This file is part of Process Hacker.
  *
@@ -444,6 +444,8 @@ NTSTATUS UpdateCheckThread(
 
     PhInitializeAutoPool(&autoPool);
 
+    PhClearCacheDirectory(); // HACK
+
     // Check if we have cached update data
     if (!context->HaveData)
     {
@@ -452,7 +454,7 @@ NTSTATUS UpdateCheckThread(
 
     if (!context->HaveData)
     {
-        ShowUpdateFailedDialog(context, FALSE, FALSE);
+        PostMessage(context->DialogHandle, PH_SHOWERROR, FALSE, FALSE);
 
         PhDereferenceObject(context);
         PhDeleteAutoPool(&autoPool);
@@ -462,17 +464,17 @@ NTSTATUS UpdateCheckThread(
     if (context->CurrentVersion == context->LatestVersion)
     {
         // User is running the latest version
-        ShowLatestVersionDialog(context);
+        PostMessage(context->DialogHandle, PH_SHOWLATEST, 0, 0);
     }
     else if (context->CurrentVersion > context->LatestVersion)
     {
         // User is running a newer version
-        ShowNewerVersionDialog(context);
+        PostMessage(context->DialogHandle, PH_SHOWNEWEST, 0, 0);
     }
     else
     {
         // User is running an older version
-        ShowAvailableDialog(context);
+        PostMessage(context->DialogHandle, PH_SHOWUPDATE, 0, 0);
     }
 
     PhDereferenceObject(context);
@@ -734,20 +736,20 @@ CleanupExit:
     {
         if (downloadSuccess && hashSuccess && signatureSuccess)
         {
-            ShowUpdateInstallDialog(context);
+            PostMessage(context->DialogHandle, PH_SHOWINSTALL, 0, 0);
         }
         else if (downloadSuccess)
         {
             if (signatureSuccess)
-                ShowUpdateFailedDialog(context, TRUE, FALSE);
+                PostMessage(context->DialogHandle, PH_SHOWERROR, TRUE, FALSE);
             else if (hashSuccess)
-                ShowUpdateFailedDialog(context, FALSE, TRUE);
+                PostMessage(context->DialogHandle, PH_SHOWERROR, FALSE, TRUE);
             else
-                ShowUpdateFailedDialog(context, FALSE, FALSE);
+                PostMessage(context->DialogHandle, PH_SHOWERROR, FALSE, FALSE);
         }
         else
         {
-            ShowUpdateFailedDialog(context, FALSE, FALSE);
+            PostMessage(context->DialogHandle, PH_SHOWERROR, FALSE, FALSE);
         }
     }
 
@@ -776,6 +778,8 @@ LRESULT CALLBACK TaskDialogSubclassProc(
         {
             SetWindowLongPtr(hwndDlg, GWLP_WNDPROC, (LONG_PTR)oldWndProc);
             PhRemoveWindowContext(hwndDlg, UCHAR_MAX);
+
+            PhUnregisterWindowCallback(hwndDlg);
         }
         break;
     case PH_SHOWDIALOG:
@@ -786,6 +790,31 @@ LRESULT CALLBACK TaskDialogSubclassProc(
                 ShowWindow(hwndDlg, SW_SHOW);
 
             SetForegroundWindow(hwndDlg);
+        }
+        break;
+    case PH_SHOWLATEST:
+        {
+            ShowLatestVersionDialog(context);
+        }
+        break;
+    case PH_SHOWNEWEST:
+        {
+            ShowNewerVersionDialog(context);
+        }
+        break;
+    case PH_SHOWUPDATE:
+        {
+            ShowAvailableDialog(context);
+        }
+        break;
+    case PH_SHOWINSTALL:
+        {
+            ShowUpdateInstallDialog(context);
+        }
+        break;
+    case PH_SHOWERROR:
+        {
+            ShowUpdateFailedDialog(context, (BOOLEAN)wParam, (BOOLEAN)lParam);
         }
         break;
     //case WM_PARENTNOTIFY:
@@ -850,10 +879,12 @@ HRESULT CALLBACK TaskDialogBootstrapCallback(
             UpdateDialogHandle = context->DialogHandle = hwndDlg;
 
             // Center the update window on PH if it's visible else we center on the desktop.
-            PhCenterWindow(hwndDlg, (IsWindowVisible(PhMainWndHandle) && !IsMinimized(PhMainWndHandle)) ? PhMainWndHandle : NULL);
+            PhCenterWindow(hwndDlg, PhMainWndHandle);
 
             // Create the Taskdialog icons.
             TaskDialogCreateIcons(context);
+
+            PhRegisterWindowCallback(hwndDlg, PH_PLUGIN_WINDOW_EVENT_TYPE_TOPMOST, NULL);
 
             // Subclass the Taskdialog.
             context->DefaultWindowProc = (WNDPROC)GetWindowLongPtr(hwndDlg, GWLP_WNDPROC);
@@ -914,9 +945,9 @@ VOID ShowUpdateDialog(
 {
     if (!UpdateDialogThreadHandle)
     {
-        if (!(UpdateDialogThreadHandle = PhCreateThread(0, ShowUpdateDialogThread, Context)))
+        if (!NT_SUCCESS(PhCreateThreadEx(&UpdateDialogThreadHandle, ShowUpdateDialogThread, Context)))
         {
-            PhShowStatus(PhMainWndHandle, L"Unable to create the updater window.", 0, GetLastError());
+            PhShowError(PhMainWndHandle, L"Unable to create the window.");
             return;
         }
 

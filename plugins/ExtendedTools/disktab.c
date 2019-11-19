@@ -3,6 +3,7 @@
  *   ETW disk monitoring
  *
  * Copyright (C) 2011-2015 wj32
+ * Copyright (C) 2018-2019 dmex
  *
  * This file is part of Process Hacker.
  *
@@ -25,20 +26,21 @@
 #include <toolstatusintf.h>
 #include "disktabp.h"
 
-static PPH_MAIN_TAB_PAGE DiskPage;
+static PPH_MAIN_TAB_PAGE DiskPage = NULL;
 static BOOLEAN DiskTreeNewCreated = FALSE;
-static HWND DiskTreeNewHandle;
-static ULONG DiskTreeNewSortColumn;
-static PH_SORT_ORDER DiskTreeNewSortOrder;
+static HWND DiskTreeNewHandle = NULL;
+static ULONG DiskTreeNewSortColumn = 0;
+static PH_SORT_ORDER DiskTreeNewSortOrder = NoSortOrder;
+static PH_STRINGREF DiskTreeEmptyText = PH_STRINGREF_INIT(L"Disk monitoring requires Process Hacker to be restarted with administrative privileges.");
 
-static PPH_HASHTABLE DiskNodeHashtable; // hashtable of all nodes
-static PPH_LIST DiskNodeList; // list of all nodes
+static PPH_HASHTABLE DiskNodeHashtable = NULL; // hashtable of all nodes
+static PPH_LIST DiskNodeList = NULL; // list of all nodes
 
+static PH_PROVIDER_EVENT_QUEUE EtpDiskEventQueue;
 static PH_CALLBACK_REGISTRATION DiskItemAddedRegistration;
 static PH_CALLBACK_REGISTRATION DiskItemModifiedRegistration;
 static PH_CALLBACK_REGISTRATION DiskItemRemovedRegistration;
 static PH_CALLBACK_REGISTRATION DiskItemsUpdatedRegistration;
-static BOOLEAN DiskNeedsRedraw = FALSE;
 
 static PH_TN_FILTER_SUPPORT FilterSupport;
 static PTOOLSTATUS_INTERFACE ToolStatusInterface;
@@ -87,42 +89,46 @@ BOOLEAN EtpDiskPageCallback(
     case MainTabPageCreateWindow:
         {
             HWND hwnd;
+            ULONG thinRows;
+            ULONG treelistBorder;
+            ULONG treelistCustomColors;
+            PH_TREENEW_CREATEPARAMS treelistCreateParams = { 0 };
 
-            if (EtEtwEnabled)
+            thinRows = PhGetIntegerSetting(L"ThinRows") ? TN_STYLE_THIN_ROWS : 0;
+            treelistBorder = (PhGetIntegerSetting(L"TreeListBorderEnable") && !!PhGetIntegerSetting(L"TreeListBorderEnable")) ? WS_BORDER : 0;
+            treelistCustomColors =  PhGetIntegerSetting(L"TreeListCustomColorsEnable") ? TN_STYLE_CUSTOM_COLORS : 0;
+
+            if (treelistCustomColors)
             {
-                ULONG thinRows;
-                ULONG treelistBorder;
-
-                thinRows = PhGetIntegerSetting(L"ThinRows") ? TN_STYLE_THIN_ROWS : 0;
-                treelistBorder = PhGetIntegerSetting(L"TreeListBorderEnable") ? WS_BORDER : 0;
-                hwnd = CreateWindow(
-                    PH_TREENEW_CLASSNAME,
-                    NULL,
-                    WS_CHILD | WS_CLIPCHILDREN | WS_CLIPSIBLINGS | TN_STYLE_ICONS | TN_STYLE_DOUBLE_BUFFERED | thinRows | treelistBorder,
-                    0,
-                    0,
-                    3,
-                    3,
-                    PhMainWndHandle,
-                    NULL,
-                    NULL,
-                    NULL
-                    );
-
-                if (!hwnd)
-                    return FALSE;
-            }
-            else
-            {
-                *(HWND *)Parameter1 = CreateDialog(
-                    PluginInstance->DllBase,
-                    MAKEINTRESOURCE(IDD_DISKTABERROR),
-                    PhMainWndHandle,
-                    EtpDiskTabErrorDialogProc
-                    );
-                return TRUE;
+                treelistCreateParams.TextColor = PhGetIntegerSetting(L"TreeListCustomColorText");
+                treelistCreateParams.FocusColor = PhGetIntegerSetting(L"TreeListCustomColorFocus");
+                treelistCreateParams.SelectionColor = PhGetIntegerSetting(L"TreeListCustomColorSelection");
             }
 
+            hwnd = CreateWindow(
+                PH_TREENEW_CLASSNAME,
+                NULL,
+                WS_CHILD | WS_CLIPCHILDREN | WS_CLIPSIBLINGS | TN_STYLE_ICONS | TN_STYLE_DOUBLE_BUFFERED | thinRows | treelistBorder | treelistCustomColors,
+                0,
+                0,
+                3,
+                3,
+                PhMainWndHandle,
+                NULL,
+                NULL,
+                &treelistCreateParams
+                );
+
+            if (!hwnd)
+                return FALSE;
+
+            if (PhGetIntegerSetting(L"EnableThemeSupport"))
+            {
+                // HACK (dmex)
+                PhInitializeThemeWindowHeader(TreeNew_GetHeader(hwnd));
+                TreeNew_ThemeSupport(hwnd, TRUE);
+            }
+            
             DiskTreeNewCreated = TRUE;
 
             DiskNodeHashtable = PhCreateHashtable(
@@ -134,6 +140,11 @@ BOOLEAN EtpDiskPageCallback(
             DiskNodeList = PhCreateList(100);
 
             EtInitializeDiskTreeList(hwnd);
+
+            if (!EtEtwEnabled)
+                TreeNew_SetEmptyText(hwnd, &DiskTreeEmptyText, 0);
+
+            PhInitializeProviderEventQueue(&EtpDiskEventQueue, 100);
 
             PhRegisterCallback(
                 &EtDiskItemAddedEvent,
@@ -177,11 +188,25 @@ BOOLEAN EtpDiskPageCallback(
             // Nothing
         }
         return TRUE;
+    case MainTabPageSelected:
+        {
+            BOOLEAN selected = (BOOLEAN)Parameter1;
+
+            if (selected)
+            {
+                EtDiskEnabled = TRUE;
+            }
+            else
+            {
+                EtDiskEnabled = FALSE;
+            }
+        }
+        break;
     case MainTabPageExportContent:
         {
             PPH_MAIN_TAB_PAGE_EXPORT_CONTENT exportContent = Parameter1;
 
-            if (!EtEtwEnabled)
+            if (!(EtEtwEnabled && exportContent))
                 return FALSE;
 
             EtWriteDiskList(exportContent->FileStream, exportContent->Mode);
@@ -192,7 +217,7 @@ BOOLEAN EtpDiskPageCallback(
             HFONT font = (HFONT)Parameter1;
 
             if (DiskTreeNewHandle)
-                SendMessage(DiskTreeNewHandle, WM_SETFONT, (WPARAM)Parameter1, TRUE);
+                SetWindowFont(DiskTreeNewHandle, font, TRUE);
         }
         break;
     }
@@ -347,7 +372,7 @@ VOID EtRemoveDiskNode(
 
     PhRemoveEntryHashtable(DiskNodeHashtable, &DiskNode);
 
-    if ((index = PhFindItemList(DiskNodeList, DiskNode)) != -1)
+    if ((index = PhFindItemList(DiskNodeList, DiskNode)) != ULONG_MAX)
         PhRemoveItemList(DiskNodeList, index);
 
     if (DiskNode->ProcessNameText) PhDereferenceObject(DiskNode->ProcessNameText);
@@ -370,8 +395,30 @@ VOID EtUpdateDiskNode(
 {
     memset(DiskNode->TextCache, 0, sizeof(PH_STRINGREF) * ETDSTNC_MAXIMUM);
 
+    PhClearReference(&DiskNode->TooltipText);
+
     PhInvalidateTreeNewNode(&DiskNode->Node, TN_CACHE_ICON);
     TreeNew_NodesStructured(DiskTreeNewHandle);
+}
+
+VOID EtTickDiskNodes(
+    VOID
+    )
+{
+    // Text invalidation
+
+    for (ULONG i = 0; i < DiskNodeList->Count; i++)
+    {
+        PET_DISK_NODE node = DiskNodeList->Items[i];
+
+        // The name and file name never change, so we don't invalidate that.
+        memset(&node->TextCache[2], 0, sizeof(PH_STRINGREF) * (ETDSTNC_MAXIMUM - 2));
+
+        // Always get the newest tooltip text from the process tree.
+        PhClearReference(&node->TooltipText);
+    }
+
+    InvalidateRect(DiskTreeNewHandle, NULL, FALSE);
 }
 
 #define SORT_FUNCTION(Column) EtpDiskTreeNewCompare##Column
@@ -437,7 +484,7 @@ BEGIN_SORT_FUNCTION(ResponseTime)
 END_SORT_FUNCTION
 
 BOOLEAN NTAPI EtpDiskTreeNewCallback(
-    _In_ HWND hwnd,
+    _In_ HWND WindowHandle,
     _In_ PH_TREENEW_MESSAGE Message,
     _In_opt_ PVOID Parameter1,
     _In_opt_ PVOID Parameter2,
@@ -485,6 +532,9 @@ BOOLEAN NTAPI EtpDiskTreeNewCallback(
         {
             PPH_TREENEW_IS_LEAF isLeaf = Parameter1;
 
+            if (!isLeaf)
+                break;
+
             isLeaf->IsLeaf = TRUE;
         }
         return TRUE;
@@ -492,6 +542,9 @@ BOOLEAN NTAPI EtpDiskTreeNewCallback(
         {
             PPH_TREENEW_GET_CELL_TEXT getCellText = Parameter1;
             PET_DISK_ITEM diskItem;
+
+            if (!getCellText)
+                break;
 
             node = (PET_DISK_NODE)getCellText->Node;
             diskItem = node->DiskItem;
@@ -556,11 +609,14 @@ BOOLEAN NTAPI EtpDiskTreeNewCallback(
         {
             PPH_TREENEW_GET_NODE_ICON getNodeIcon = Parameter1;
 
+            if (!getNodeIcon)
+                break;
+
             node = (PET_DISK_NODE)getNodeIcon->Node;
 
-            if (node->DiskItem->ProcessIcon)
+            if (node->DiskItem->ProcessIconValid && node->DiskItem->ProcessIcon)
             {
-                getNodeIcon->Icon = node->DiskItem->ProcessIcon->Icon;
+                getNodeIcon->Icon = node->DiskItem->ProcessIcon;
             }
             else
             {
@@ -574,6 +630,9 @@ BOOLEAN NTAPI EtpDiskTreeNewCallback(
         {
             PPH_TREENEW_GET_CELL_TOOLTIP getCellTooltip = Parameter1;
             PPH_PROCESS_NODE processNode;
+
+            if (!getCellTooltip)
+                break;
 
             node = (PET_DISK_NODE)getCellTooltip->Node;
 
@@ -613,7 +672,7 @@ BOOLEAN NTAPI EtpDiskTreeNewCallback(
             {
                 getCellTooltip->Text = node->TooltipText->sr;
                 getCellTooltip->Unfolding = FALSE;
-                getCellTooltip->MaximumWidth = -1;
+                getCellTooltip->MaximumWidth = ULONG_MAX;
             }
             else
             {
@@ -623,27 +682,30 @@ BOOLEAN NTAPI EtpDiskTreeNewCallback(
         return TRUE;
     case TreeNewSortChanged:
         {
-            TreeNew_GetSort(hwnd, &DiskTreeNewSortColumn, &DiskTreeNewSortOrder);
+            TreeNew_GetSort(WindowHandle, &DiskTreeNewSortColumn, &DiskTreeNewSortOrder);
             // Force a rebuild to sort the items.
-            TreeNew_NodesStructured(hwnd);
+            TreeNew_NodesStructured(WindowHandle);
         }
         return TRUE;
     case TreeNewKeyDown:
         {
             PPH_TREENEW_KEY_EVENT keyEvent = Parameter1;
 
+            if (!keyEvent)
+                break;
+
             switch (keyEvent->VirtualKey)
             {
             case 'C':
                 if (GetKeyState(VK_CONTROL) < 0)
-                    EtHandleDiskCommand(ID_DISK_COPY);
+                    EtHandleDiskCommand(WindowHandle, ID_DISK_COPY);
                 break;
             case 'A':
                 if (GetKeyState(VK_CONTROL) < 0)
                     TreeNew_SelectRange(DiskTreeNewHandle, 0, -1);
                 break;
             case VK_RETURN:
-                EtHandleDiskCommand(ID_DISK_OPENFILELOCATION);
+                EtHandleDiskCommand(WindowHandle, ID_DISK_OPENFILELOCATION);
                 break;
             }
         }
@@ -652,13 +714,13 @@ BOOLEAN NTAPI EtpDiskTreeNewCallback(
         {
             PH_TN_COLUMN_MENU_DATA data;
 
-            data.TreeNewHandle = hwnd;
+            data.TreeNewHandle = WindowHandle;
             data.MouseEvent = Parameter1;
             data.DefaultSortColumn = 0;
             data.DefaultSortOrder = AscendingSortOrder;
             PhInitializeTreeNewColumnMenu(&data);
 
-            data.Selection = PhShowEMenu(data.Menu, hwnd, PH_EMENU_SHOW_LEFTRIGHT,
+            data.Selection = PhShowEMenu(data.Menu, WindowHandle, PH_EMENU_SHOW_LEFTRIGHT,
                 PH_ALIGN_LEFT | PH_ALIGN_TOP, data.MouseEvent->ScreenLocation.x, data.MouseEvent->ScreenLocation.y);
             PhHandleTreeNewColumnMenu(&data);
             PhDeleteTreeNewColumnMenu(&data);
@@ -666,14 +728,17 @@ BOOLEAN NTAPI EtpDiskTreeNewCallback(
         return TRUE;
     case TreeNewLeftDoubleClick:
         {
-            EtHandleDiskCommand(ID_DISK_OPENFILELOCATION);
+            EtHandleDiskCommand(WindowHandle, ID_DISK_OPENFILELOCATION);
         }
         return TRUE;
     case TreeNewContextMenu:
         {
             PPH_TREENEW_CONTEXT_MENU contextMenuEvent = Parameter1;
 
-            EtShowDiskContextMenu(hwnd, contextMenuEvent);
+            if (!contextMenuEvent)
+                break;
+
+            EtShowDiskContextMenu(WindowHandle, contextMenuEvent);
         }
         return TRUE;
     case TreeNewDestroying:
@@ -811,6 +876,7 @@ VOID EtWriteDiskList(
 }
 
 VOID EtHandleDiskCommand(
+    _In_ HWND WindowHandle,
     _In_ ULONG Id
     )
 {
@@ -941,7 +1007,7 @@ VOID EtShowDiskContextMenu(
 
         item = PhShowEMenu(
             menu,
-            PhMainWndHandle,
+            TreeWindowHandle,
             PH_EMENU_SHOW_LEFTRIGHT,
             PH_ALIGN_LEFT | PH_ALIGN_TOP,
             ContextMenuEvent->Location.x,
@@ -955,7 +1021,7 @@ VOID EtShowDiskContextMenu(
             handled = PhHandleCopyCellEMenuItem(item);
 
             if (!handled)
-                EtHandleDiskCommand(item->Id);
+                EtHandleDiskCommand(TreeWindowHandle, item->Id);
         }
 
         PhDestroyEMenu(menu);
@@ -972,7 +1038,7 @@ VOID NTAPI EtpDiskItemAddedHandler(
     PET_DISK_ITEM diskItem = (PET_DISK_ITEM)Parameter;
 
     PhReferenceObject(diskItem);
-    ProcessHacker_Invoke(PhMainWndHandle, EtpOnDiskItemAdded, diskItem);
+    PhPushProviderEventQueue(&EtpDiskEventQueue, ProviderAddedEvent, Parameter, EtRunCount);
 }
 
 VOID NTAPI EtpDiskItemModifiedHandler(
@@ -980,7 +1046,7 @@ VOID NTAPI EtpDiskItemModifiedHandler(
     _In_opt_ PVOID Context
     )
 {
-    ProcessHacker_Invoke(PhMainWndHandle, EtpOnDiskItemModified, (PET_DISK_ITEM)Parameter);
+    PhPushProviderEventQueue(&EtpDiskEventQueue, ProviderModifiedEvent, Parameter, EtRunCount);
 }
 
 VOID NTAPI EtpDiskItemRemovedHandler(
@@ -988,7 +1054,7 @@ VOID NTAPI EtpDiskItemRemovedHandler(
     _In_opt_ PVOID Context
     )
 {
-    ProcessHacker_Invoke(PhMainWndHandle, EtpOnDiskItemRemoved, (PET_DISK_ITEM)Parameter);
+    PhPushProviderEventQueue(&EtpDiskEventQueue, ProviderRemovedEvent, Parameter, EtRunCount);
 }
 
 VOID NTAPI EtpDiskItemsUpdatedHandler(
@@ -996,75 +1062,50 @@ VOID NTAPI EtpDiskItemsUpdatedHandler(
     _In_opt_ PVOID Context
     )
 {
-    ProcessHacker_Invoke(PhMainWndHandle, EtpOnDiskItemsUpdated, NULL);
-}
-
-VOID NTAPI EtpOnDiskItemAdded(
-    _In_ PVOID Parameter
-    )
-{
-    PET_DISK_ITEM diskItem = Parameter;
-    PET_DISK_NODE diskNode;
-
-    if (!DiskNeedsRedraw)
-    {
-        TreeNew_SetRedraw(DiskTreeNewHandle, FALSE);
-        DiskNeedsRedraw = TRUE;
-    }
-
-    diskNode = EtAddDiskNode(diskItem);
-    PhDereferenceObject(diskItem);
-}
-
-VOID NTAPI EtpOnDiskItemModified(
-    _In_ PVOID Parameter
-    )
-{
-    PET_DISK_ITEM diskItem = Parameter;
-
-    EtUpdateDiskNode(EtFindDiskNode(diskItem));
-}
-
-VOID NTAPI EtpOnDiskItemRemoved(
-    _In_ PVOID Parameter
-    )
-{
-    PET_DISK_ITEM diskItem = Parameter;
-
-    if (!DiskNeedsRedraw)
-    {
-        TreeNew_SetRedraw(DiskTreeNewHandle, FALSE);
-        DiskNeedsRedraw = TRUE;
-    }
-
-    EtRemoveDiskNode(EtFindDiskNode(diskItem));
+    ProcessHacker_Invoke(PhMainWndHandle, EtpOnDiskItemsUpdated, EtRunCount);
 }
 
 VOID NTAPI EtpOnDiskItemsUpdated(
-    _In_ PVOID Parameter
+    _In_ ULONG RunId
     )
 {
+    PPH_PROVIDER_EVENT events;
+    ULONG count;
     ULONG i;
 
-    if (DiskNeedsRedraw)
+    events = PhFlushProviderEventQueue(&EtpDiskEventQueue, RunId, &count);
+
+    if (events)
     {
+        TreeNew_SetRedraw(DiskTreeNewHandle, FALSE);
+
+        for (i = 0; i < count; i++)
+        {
+            PH_PROVIDER_EVENT_TYPE type = PH_PROVIDER_EVENT_TYPE(events[i]);
+            PET_DISK_ITEM diskItem = PH_PROVIDER_EVENT_OBJECT(events[i]);
+
+            switch (type)
+            {
+            case ProviderAddedEvent:
+                EtAddDiskNode(diskItem);
+                PhDereferenceObject(diskItem);
+                break;
+            case ProviderModifiedEvent:
+                EtUpdateDiskNode(EtFindDiskNode(diskItem));
+                break;
+            case ProviderRemovedEvent:
+                EtRemoveDiskNode(EtFindDiskNode(diskItem));
+                break;
+            }
+        }
+
+        PhFree(events);
+    }
+
+    EtTickDiskNodes();
+
+    if (count != 0)
         TreeNew_SetRedraw(DiskTreeNewHandle, TRUE);
-        DiskNeedsRedraw = FALSE;
-    }
-
-    // Text invalidation
-
-    for (i = 0; i < DiskNodeList->Count; i++)
-    {
-        PET_DISK_NODE node = DiskNodeList->Items[i];
-
-        // The name and file name never change, so we don't invalidate that.
-        memset(&node->TextCache[2], 0, sizeof(PH_STRINGREF) * (ETDSTNC_MAXIMUM - 2));
-        // Always get the newest tooltip text from the process tree.
-        PhClearReference(&node->TooltipText);
-    }
-
-    InvalidateRect(DiskTreeNewHandle, NULL, FALSE);
 }
 
 VOID NTAPI EtpSearchChangedHandler(
@@ -1118,66 +1159,66 @@ HWND NTAPI EtpToolStatusGetTreeNewHandle(
     return DiskTreeNewHandle;
 }
 
-INT_PTR CALLBACK EtpDiskTabErrorDialogProc(
-    _In_ HWND hwndDlg,
-    _In_ UINT uMsg,
-    _In_ WPARAM wParam,
-    _In_ LPARAM lParam
-    )
-{
-    switch (uMsg)
-    {
-    case WM_INITDIALOG:
-        {
-            if (!PhGetOwnTokenAttributes().Elevated)
-            {
-                Button_SetElevationRequiredState(GetDlgItem(hwndDlg, IDC_RESTART), TRUE);
-            }
-            else
-            {
-                PhSetDialogItemText(hwndDlg, IDC_ERROR, L"Unable to start the kernel event tracing session.");
-                ShowWindow(GetDlgItem(hwndDlg, IDC_RESTART), SW_HIDE);
-            }
-
-            PhInitializeWindowTheme(hwndDlg, !!PhGetIntegerSetting(L"EnableThemeSupport"));
-        }
-        break;
-    case WM_COMMAND:
-        {
-            switch (GET_WM_COMMAND_ID(wParam, lParam))
-            {
-            case IDC_RESTART:
-                ProcessHacker_PrepareForEarlyShutdown(PhMainWndHandle);
-
-                if (PhShellProcessHacker(
-                    PhMainWndHandle,
-                    L"-v -selecttab Disk",
-                    SW_SHOW,
-                    PH_SHELL_EXECUTE_ADMIN,
-                    PH_SHELL_APP_PROPAGATE_PARAMETERS | PH_SHELL_APP_PROPAGATE_PARAMETERS_IGNORE_VISIBILITY,
-                    0,
-                    NULL
-                    ))
-                {
-                    ProcessHacker_Destroy(PhMainWndHandle);
-                }
-                else
-                {
-                    ProcessHacker_CancelEarlyShutdown(PhMainWndHandle);
-                }
-
-                break;
-            }
-        }
-        break;
-    case WM_CTLCOLORBTN:
-    case WM_CTLCOLORSTATIC:
-        {
-            SetBkMode((HDC)wParam, TRANSPARENT);
-            return (INT_PTR)GetSysColorBrush(COLOR_WINDOW);
-        }
-        break;
-    }
-
-    return FALSE;
-}
+//INT_PTR CALLBACK EtpDiskTabErrorDialogProc(
+//    _In_ HWND hwndDlg,
+//    _In_ UINT uMsg,
+//    _In_ WPARAM wParam,
+//    _In_ LPARAM lParam
+//    )
+//{
+//    switch (uMsg)
+//    {
+//    case WM_INITDIALOG:
+//        {
+//            if (!PhGetOwnTokenAttributes().Elevated)
+//            {
+//                Button_SetElevationRequiredState(GetDlgItem(hwndDlg, IDC_RESTART), TRUE);
+//            }
+//            else
+//            {
+//                PhSetDialogItemText(hwndDlg, IDC_ERROR, L"Unable to start the kernel event tracing session.");
+//                ShowWindow(GetDlgItem(hwndDlg, IDC_RESTART), SW_HIDE);
+//            }
+//
+//            PhInitializeWindowTheme(hwndDlg, !!PhGetIntegerSetting(L"EnableThemeSupport"));
+//        }
+//        break;
+//    case WM_COMMAND:
+//        {
+//            switch (GET_WM_COMMAND_ID(wParam, lParam))
+//            {
+//            case IDC_RESTART:
+//                ProcessHacker_PrepareForEarlyShutdown(PhMainWndHandle);
+//
+//                if (PhShellProcessHacker(
+//                    PhMainWndHandle,
+//                    L"-v -selecttab Disk",
+//                    SW_SHOW,
+//                    PH_SHELL_EXECUTE_ADMIN,
+//                    PH_SHELL_APP_PROPAGATE_PARAMETERS | PH_SHELL_APP_PROPAGATE_PARAMETERS_IGNORE_VISIBILITY,
+//                    0,
+//                    NULL
+//                    ))
+//                {
+//                    ProcessHacker_Destroy(PhMainWndHandle);
+//                }
+//                else
+//                {
+//                    ProcessHacker_CancelEarlyShutdown(PhMainWndHandle);
+//                }
+//
+//                break;
+//            }
+//        }
+//        break;
+//    case WM_CTLCOLORBTN:
+//    case WM_CTLCOLORSTATIC:
+//        {
+//            SetBkMode((HDC)wParam, TRANSPARENT);
+//            return (INT_PTR)GetSysColorBrush(COLOR_WINDOW);
+//        }
+//        break;
+//    }
+//
+//    return FALSE;
+//}
